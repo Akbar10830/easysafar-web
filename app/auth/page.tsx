@@ -101,14 +101,13 @@ export default function AuthPage() {
 
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1">Email Address</label>
-            <input 
-              type="email" 
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-[#185FA5]"
-              placeholder="Enter your email"
-            />
+           <input 
+  type="email" 
+  placeholder="Enter your email" 
+  value={email}
+  onChange={(e) => setEmail(e.target.value)}
+  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5] transition"
+/>
           </div>
 
           <div>
@@ -118,7 +117,7 @@ export default function AuthPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-[#185FA5]"
+              className="w-full text-gray-900 font-medium border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-[#185FA5]"
               placeholder="Enter your password"
             />
           </div>
