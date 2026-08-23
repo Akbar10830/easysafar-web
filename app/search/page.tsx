@@ -226,18 +226,22 @@ export default function SearchPage() {
             </div>
 
             {bookingType === "passenger" && (
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">Number of Seats</label>
-                <input 
-                  type="number" 
-                  min="1" 
-                  max={selectedTrip.seatsAvailable} 
-                  value={seatsToBook} 
-                  onChange={(e) => setSeatsToBook(parseInt(e.target.value) || 1)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3"
-                />
-              </div>
-            )}
+  <div>
+    <label className="block text-sm font-bold text-gray-700 mb-2">Number of Seats</label>
+    <input 
+      type="number" 
+      min="1" 
+      max={selectedTrip.seatsAvailable} 
+      value={seatsToBook === 0 ? "" : seatsToBook} 
+      onChange={(e) => {
+        const val = e.target.value;
+        setSeatsToBook(val === "" ? 0 : parseInt(val));
+      }}
+      placeholder="Enter number of seats"
+      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5] transition"
+    />
+  </div>
+)}
 
             <div className="flex gap-3 pt-2">
               <button 
