@@ -1,178 +1,103 @@
 "use client";
 import { useState, useEffect } from "react";
-import { db, auth } from "../../lib/firebase";
-import { collection, query, where, getDocs, doc, deleteDoc, onSnapshot } from "firebase/firestore";
+import { db, auth } from "@/lib/firebase";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import { Calendar, Clock, CheckCircle2, Ticket, Trash2, Car, Package, Navigation, X } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { Calendar, Clock, MapPin, Bus, Car } from "lucide-react";
 import dynamic from "next/dynamic";
 
-// IMPORTANT: We dynamically import the map so it only loads in the browser!
-const LiveMap = dynamic(() => import('../../components/LiveMap'), { ssr: false, loading: () => <div className="h-[400px] w-full bg-gray-100 animate-pulse rounded-2xl flex items-center justify-center text-gray-500">Loading Map...</div> });
+// Dynamically import Leaflet map to avoid SSR window errors
+const MapWithNoSSR = dynamic(() => import("@/components/LiveMap"), { 
+  ssr: false,
+  loading: () => <p className="p-4 text-gray-500">Loading interactive map...</p>
+});
+
+interface Booking {
+  id: string;
+  tripId: string;
+  origin: string;
+  destination: string;
+  date: string;
+  time: string;
+  seatsBooked: number;
+  totalPrice: number;
+  type: string;
+  driverPhone: string;
+}
 
 export default function HistoryPage() {
-  const [bookings, setBookings] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  
-  // LIVE TRACKING STATES
-  const [trackingTripId, setTrackingTripId] = useState<string | null>(null);
-  const [liveLocation, setLiveLocation] = useState<{ lat: number, lng: number } | null>(null);
-  
-  const router = useRouter();
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [activeTrackingTrip, setActiveTrackingTrip] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
+      if (user && user.email) {
         try {
-          const bookingsRef = collection(db, "bookings");
-          const q = query(bookingsRef, where("passengerEmail", "==", user.email));
+          const q = query(collection(db, "bookings"), where("passengerEmail", "==", user.email));
           const querySnapshot = await getDocs(q);
-          
-          const fetchedBookings: any[] = [];
+          const list: Booking[] = [];
           querySnapshot.forEach((docSnap) => {
-            fetchedBookings.push({ id: docSnap.id, ...docSnap.data() });
+            list.push({ id: docSnap.id, ...docSnap.data() } as Booking);
           });
-          
-          fetchedBookings.sort((a, b) => {
-            if (!a.bookedAt || !b.bookedAt) return 0;
-            return b.bookedAt.toMillis() - a.bookedAt.toMillis();
-          });
-
-          setBookings(fetchedBookings);
+          setBookings(list);
         } catch (error) {
           console.error("Error fetching bookings:", error);
-        } finally {
-          setLoading(false);
         }
-      } else {
-        router.push("/auth");
       }
     });
-
     return () => unsubscribe();
-  }, [router]);
-
-  // LISTEN FOR LIVE GPS UPDATES FROM FIREBASE
-  useEffect(() => {
-    let unsubscribeTrip: any = null;
-
-    if (trackingTripId) {
-      const tripRef = doc(db, "trips", trackingTripId);
-      // onSnapshot listens to the database in real-time!
-      unsubscribeTrip = onSnapshot(tripRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data.liveLat && data.liveLng) {
-            setLiveLocation({ lat: data.liveLat, lng: data.liveLng });
-          } else {
-            setLiveLocation(null); // Driver hasn't broadcasted yet
-          }
-        }
-      });
-    }
-
-    return () => {
-      if (unsubscribeTrip) unsubscribeTrip();
-    };
-  }, [trackingTripId]);
-
-  const handleDelete = async (bookingId: string) => {
-    const confirmDelete = window.confirm("Are you sure you want to delete this ticket?");
-    if (!confirmDelete) return;
-
-    try {
-      await deleteDoc(doc(db, "bookings", bookingId));
-      setBookings(bookings.filter((booking) => booking.id !== bookingId));
-    } catch (error) {
-      alert("Failed to delete the booking.");
-    }
-  };
-
-  if (loading) return <div className="text-center py-16">Loading...</div>;
+  }, []);
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 pb-24">
-      <div className="flex items-center gap-3 mb-8">
-        <Ticket className="text-[#185FA5]" size={32} />
-        <h1 className="text-3xl font-bold text-gray-900">My Bookings</h1>
-      </div>
+      <h1 className="text-3xl font-bold text-gray-900 mb-6">Your Bookings & Tracking</h1>
 
-      <div className="space-y-4">
-        {bookings.map((booking) => (
-          <div key={booking.id} className="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-l-green-500 border border-gray-200 relative overflow-hidden">
-            
-            <button onClick={() => handleDelete(booking.id)} className="absolute top-4 right-4 text-gray-300 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-red-50 z-10">
-              <Trash2 size={20} />
-            </button>
-
-            <div className="flex justify-between items-start mb-4 pr-10 relative z-10">
-               <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wide">
-                      <CheckCircle2 size={12} /> Confirmed
+      {bookings.length === 0 ? (
+        <div className="bg-white p-8 rounded-2xl border border-gray-200 text-center text-gray-500">
+          You have no active bookings yet.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {bookings.map((booking) => (
+            <div key={booking.id} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-4">
+              <div className="flex justify-between items-start">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="bg-blue-100 text-[#185FA5] text-xs px-2.5 py-1 rounded-full font-bold">
+                      {booking.type === "cargo" ? "Cargo Transport" : `${booking.seatsBooked} Seat(s)`}
                     </span>
-                    {booking.type === "cargo" ? (
-                      <span className="inline-flex items-center gap-1 bg-orange-100 text-[#D35400] text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wide">
-                        <Package size={12} /> Cargo Space
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 bg-blue-100 text-[#185FA5] text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wide">
-                        <Car size={12} /> Passenger 
-                        <span className="font-black bg-[#185FA5] text-white px-1.5 rounded ml-1">{booking.seatsBooked || 1}</span>
-                      </span>
-                    )}
                   </div>
-                  <div className="flex items-center gap-2 font-bold text-lg text-gray-900">
-                    {booking.origin} to {booking.destination}
-                  </div>
-               </div>
-            </div>
-            
-            <div className="bg-gray-50 rounded-lg p-4 grid grid-cols-2 gap-4 relative z-10">
-                <div className="flex flex-col">
-                    <span className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Date & Time</span>
-                    <span className="text-gray-900 font-bold flex items-center gap-2"><Calendar size={16} className="text-[#185FA5]"/> {booking.date}, {booking.time}</span>
+                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    {booking.origin} <span className="text-gray-400">→</span> {booking.destination}
+                  </h3>
                 </div>
-                <div className="flex flex-col items-end">
-                    <span className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Total Bill</span>
-                    <span className="text-gray-900 font-black text-lg">
-                      {booking.totalPrice && booking.totalPrice > 0 ? `Rs ${booking.totalPrice}` : 'Free'}
-                    </span>
+                <div className="text-right">
+                  <span className="text-lg font-black text-gray-900">Rs {booking.totalPrice}</span>
                 </div>
-                 <div className="flex flex-col col-span-2 pt-2 border-t border-gray-200 mt-2">
-                    <span className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Driver Contact</span>
-                    <span className="text-gray-900 font-medium">{booking.driverPhone}</span>
-                </div>
-            </div>
+              </div>
 
-            {/* TRACK DRIVER BUTTON */}
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              {trackingTripId === booking.tripId ? (
-                <div className="space-y-4">
-                  <button onClick={() => setTrackingTripId(null)} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition flex justify-center items-center gap-2">
-                    <X size={20} /> Close Map
-                  </button>
-                  
-                  {liveLocation ? (
-                    <LiveMap lat={liveLocation.lat} lng={liveLocation.lng} />
-                  ) : (
-                    <div className="bg-blue-50 border border-blue-200 p-6 rounded-2xl text-center">
-                      <Navigation size={32} className="text-[#185FA5] mx-auto mb-2 animate-bounce" />
-                      <p className="text-[#185FA5] font-bold">Waiting for Driver...</p>
-                      <p className="text-blue-600 text-sm mt-1">The Driver hasn't started broadcasting their location yet.</p>
-                    </div>
-                  )}
+              <div className="flex flex-wrap gap-4 text-sm text-gray-500 border-t border-gray-100 pt-3">
+                <span className="flex items-center gap-1"><Calendar size={14} /> {booking.date}</span>
+                <span className="flex items-center gap-1"><Clock size={14} /> {booking.time}</span>
+                <span className="flex items-center gap-1"><MapPin size={14} /> Driver: {booking.driverPhone}</span>
+              </div>
+
+              <button
+                onClick={() => setActiveTrackingTrip(activeTrackingTrip === booking.tripId ? null : booking.tripId)}
+                className="w-full bg-[#185FA5] hover:bg-[#124b82] text-white font-bold py-2.5 rounded-xl transition text-sm shadow-sm flex items-center justify-center gap-2"
+              >
+                <MapPin size={16} /> {activeTrackingTrip === booking.tripId ? "Close Map" : "Track Live Location"}
+              </button>
+
+              {activeTrackingTrip === booking.tripId && (
+                <div className="mt-4 border border-gray-200 rounded-xl overflow-hidden bg-gray-50 p-2">
+                  <MapWithNoSSR />
                 </div>
-              ) : (
-                <button onClick={() => setTrackingTripId(booking.tripId)} className="w-full bg-green-50 hover:bg-green-100 text-green-700 font-bold py-3 rounded-xl transition flex justify-center items-center gap-2">
-                  <Navigation size={20} /> Track Driver
-                </button>
               )}
             </div>
-
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
