@@ -3,26 +3,42 @@ import { useState, useEffect } from "react";
 import { db, auth } from "@/lib/firebase";
 import { collection, getDocs, addDoc, doc, updateDoc, increment } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import { Search as SearchIcon, MapPin, Calendar, Clock, Users, Banknote, Car, Bus, Phone, Building2 } from "lucide-react";
+import { Search as SearchIcon, Calendar, Clock, Users, Car, Bus, Phone, Building2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+interface Trip {
+  id: string;
+  origin: string;
+  destination: string;
+  date: string;
+  time: string;
+  price: number;
+  seatsAvailable: number;
+  type?: string;
+  vehicleType?: string;
+  addaName?: string;
+  phone?: string;
+  driverPhone?: string;
+  status: string;
+}
+
 export default function SearchPage() {
-  const [trips, setTrips] = useState<any[]>([]);
-  const [filteredTrips, setFilteredTrips] = useState<any[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [filteredTrips, setFilteredTrips] = useState<Trip[]>([]);
   const [originQuery, setOriginQuery] = useState("");
   const [destinationQuery, setDestinationQuery] = useState("");
   const [userEmail, setUserEmail] = useState<string | null>(null);
   
   // Booking Modal State
-  const [selectedTrip, setSelectedTrip] = useState<any | null>(null);
-  const [seatsToBook, setSeatsToBook] = useState(1);
+  const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
+  const [seatsToBook, setSeatsToBook] = useState<number | "">(1);
   const [bookingType, setBookingType] = useState<"passenger" | "cargo">("passenger");
   
   const router = useRouter();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) setUserEmail(user.email);
+      if (user && user.email) setUserEmail(user.email);
     });
     fetchTrips();
     return () => unsubscribe();
@@ -31,13 +47,18 @@ export default function SearchPage() {
   const fetchTrips = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, "trips"));
-      const allTrips: any[] = [];
-      const today = new Date().toISOString().split("T")[0];
+      const allTrips: Trip[] = [];
+      
+      // Calculate 3 days ago threshold
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      const cutoffDate = threeDaysAgo.toISOString().split("T")[0];
 
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        if (data.status === "active" && data.date >= today) {
-          allTrips.push({ id: docSnap.id, ...data });
+        // Only include active trips that are not older than 3 days
+        if (data.status === "active" && data.date >= cutoffDate) {
+          allTrips.push({ id: docSnap.id, ...data } as Trip);
         }
       });
 
@@ -67,7 +88,9 @@ export default function SearchPage() {
 
     if (!selectedTrip) return;
 
-    if (bookingType === "passenger" && seatsToBook > selectedTrip.seatsAvailable) {
+    const seatCount = typeof seatsToBook === "number" ? seatsToBook : 1;
+
+    if (bookingType === "passenger" && seatCount > selectedTrip.seatsAvailable) {
       alert("Not enough seats available!");
       return;
     }
@@ -80,8 +103,8 @@ export default function SearchPage() {
         destination: selectedTrip.destination,
         date: selectedTrip.date,
         time: selectedTrip.time,
-        seatsBooked: bookingType === "passenger" ? seatsToBook : 0,
-        totalPrice: bookingType === "passenger" ? selectedTrip.price * seatsToBook : selectedTrip.price,
+        seatsBooked: bookingType === "passenger" ? seatCount : 0,
+        totalPrice: bookingType === "passenger" ? selectedTrip.price * seatCount : selectedTrip.price,
         type: bookingType,
         driverPhone: selectedTrip.phone || selectedTrip.driverPhone || "N/A",
         bookedAt: new Date(),
@@ -90,7 +113,7 @@ export default function SearchPage() {
       if (bookingType === "passenger") {
         const tripRef = doc(db, "trips", selectedTrip.id);
         await updateDoc(tripRef, {
-          seatsAvailable: increment(-seatsToBook)
+          seatsAvailable: increment(-seatCount)
         });
       }
 
@@ -119,7 +142,7 @@ export default function SearchPage() {
               placeholder="Origin city" 
               value={originQuery} 
               onChange={(e) => setOriginQuery(e.target.value)} 
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none"
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5] transition"
             />
           </div>
           <div>
@@ -129,11 +152,11 @@ export default function SearchPage() {
               placeholder="Destination city" 
               value={destinationQuery} 
               onChange={(e) => setDestinationQuery(e.target.value)} 
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none"
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5] transition"
             />
           </div>
         </div>
-        <button type="submit" className="w-full bg-[#185FA5] hover:bg-[#124b82] text-white font-bold py-3 rounded-xl transition">
+        <button type="submit" className="w-full bg-[#185FA5] hover:bg-[#124b82] text-white font-bold py-3 rounded-xl transition shadow-sm">
           Search Available Options
         </button>
       </form>
@@ -183,7 +206,10 @@ export default function SearchPage() {
                   Rs {trip.price} <span className="text-xs font-normal text-gray-500">/ seat</span>
                 </div>
                 <button 
-                  onClick={() => setSelectedTrip(trip)}
+                  onClick={() => {
+                    setSelectedTrip(trip);
+                    setSeatsToBook(1);
+                  }}
                   className="bg-[#185FA5] hover:bg-[#124b82] text-white font-bold px-6 py-2.5 rounded-xl transition text-sm shadow-sm"
                 >
                   Book Now
@@ -226,22 +252,22 @@ export default function SearchPage() {
             </div>
 
             {bookingType === "passenger" && (
-  <div>
-    <label className="block text-sm font-bold text-gray-700 mb-2">Number of Seats</label>
-    <input 
-      type="number" 
-      min="1" 
-      max={selectedTrip.seatsAvailable} 
-      value={seatsToBook === 0 ? "" : seatsToBook} 
-      onChange={(e) => {
-        const val = e.target.value;
-        setSeatsToBook(val === "" ? 0 : parseInt(val));
-      }}
-      placeholder="Enter number of seats"
-      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5] transition"
-    />
-  </div>
-)}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Number of Seats</label>
+                <input 
+                  type="number" 
+                  min="1" 
+                  max={selectedTrip.seatsAvailable} 
+                  value={seatsToBook} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSeatsToBook(val === "" ? "" : parseInt(val));
+                  }}
+                  placeholder="Enter seats"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5]"
+                />
+              </div>
+            )}
 
             <div className="flex gap-3 pt-2">
               <button 
@@ -254,7 +280,7 @@ export default function SearchPage() {
                 onClick={handleBookTrip}
                 className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition shadow-md"
               >
-                Confirm (Rs {bookingType === "passenger" ? selectedTrip.price * seatsToBook : selectedTrip.price})
+                Confirm (Rs {bookingType === "passenger" ? selectedTrip.price * (typeof seatsToBook === "number" ? seatsToBook : 1) : selectedTrip.price})
               </button>
             </div>
           </div>
