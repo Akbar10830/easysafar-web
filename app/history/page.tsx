@@ -3,10 +3,9 @@ import { useState, useEffect } from "react";
 import { db, auth } from "@/lib/firebase";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import { Calendar, Clock, MapPin, Bus, Car } from "lucide-react";
+import { Calendar, Clock, MapPin } from "lucide-react";
 import dynamic from "next/dynamic";
 
-// Dynamically import Leaflet map to avoid SSR window errors
 const MapWithNoSSR = dynamic(() => import("@/components/LiveMap"), { 
   ssr: false,
   loading: () => <p className="p-4 text-gray-500">Loading interactive map...</p>
@@ -36,9 +35,20 @@ export default function HistoryPage() {
           const q = query(collection(db, "bookings"), where("passengerEmail", "==", user.email));
           const querySnapshot = await getDocs(q);
           const list: Booking[] = [];
+
+          // Calculate 3 days ago threshold (Current date: Aug 24, 2026)
+          const threeDaysAgo = new Date();
+          threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+          const cutoffDate = threeDaysAgo.toISOString().split("T")[0];
+
           querySnapshot.forEach((docSnap) => {
-            list.push({ id: docSnap.id, ...docSnap.data() } as Booking);
+            const data = docSnap.data();
+            // Only keep bookings from the last 3 days
+            if (data.date && data.date >= cutoffDate) {
+              list.push({ id: docSnap.id, ...data } as Booking);
+            }
           });
+
           setBookings(list);
         } catch (error) {
           console.error("Error fetching bookings:", error);
@@ -54,7 +64,7 @@ export default function HistoryPage() {
 
       {bookings.length === 0 ? (
         <div className="bg-white p-8 rounded-2xl border border-gray-200 text-center text-gray-500">
-          You have no active bookings yet.
+          No recent bookings found within the last 3 days.
         </div>
       ) : (
         <div className="space-y-4">
@@ -64,7 +74,7 @@ export default function HistoryPage() {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <span className="bg-blue-100 text-[#185FA5] text-xs px-2.5 py-1 rounded-full font-bold">
-                      {booking.type === "cargo" ? "Cargo Transport" : `${booking.seatsBooked} Seat(s)`}
+                      {booking.type === "cargo" ? "Cargo Transport" : `${booking.seatsBooked || 1} Seat(s)`}
                     </span>
                   </div>
                   <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -72,14 +82,16 @@ export default function HistoryPage() {
                   </h3>
                 </div>
                 <div className="text-right">
-                  <span className="text-lg font-black text-gray-900">Rs {booking.totalPrice}</span>
+                  <span className="text-lg font-black text-gray-900">
+                    Rs {typeof booking.totalPrice === "number" ? booking.totalPrice : 0}
+                  </span>
                 </div>
               </div>
 
               <div className="flex flex-wrap gap-4 text-sm text-gray-500 border-t border-gray-100 pt-3">
                 <span className="flex items-center gap-1"><Calendar size={14} /> {booking.date}</span>
                 <span className="flex items-center gap-1"><Clock size={14} /> {booking.time}</span>
-                <span className="flex items-center gap-1"><MapPin size={14} /> Driver: {booking.driverPhone}</span>
+                <span className="flex items-center gap-1"><MapPin size={14} /> Driver: {booking.driverPhone || "N/A"}</span>
               </div>
 
               <button
