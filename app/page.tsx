@@ -111,11 +111,25 @@ export default function LandingPage() {
                 </div>
               </div>
             </div>
-            
-            <div className="bg-gray-100 rounded-2xl p-8 flex flex-col justify-center items-center h-96 border-2 border-dashed border-gray-300">
+            {/* Dashboard Mockup Display Section */}
+<div className="my-12 text-center space-y-4">
+  <div className="inline-block bg-blue-50 text-[#185FA5] text-xs font-bold uppercase px-3 py-1 rounded-full">
+    Platform Preview
+  </div>
+ 
+  
+  <div className="max-w-md mx-auto p-2 bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden mt-6">
+    <img 
+      src="/Edit_2026-08-27 (1).png" 
+      alt="EasySafar Dashboard Mockup" 
+      className="w-full h-auto rounded-2xl object-cover"
+    />
+  </div>
+</div>
+            {/* <div className="bg-gray-100 rounded-2xl p-8 flex flex-col justify-center items-center h-96 border-2 border-dashed border-gray-300">
               <span className="text-5xl mb-4">🚐</span>
               <p className="text-gray-500 font-medium">App Dashboard Interface Mockup</p>
-            </div>
+            </div> */}
           </div>
         </div>
       </section>
