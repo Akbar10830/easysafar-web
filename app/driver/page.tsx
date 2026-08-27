@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { db, auth } from "@/lib/firebase";
 import { collection, getDocs, query, where, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import { Calendar, Clock, Users, Trash2, MapPin, Navigation } from "lucide-react";
+import { Calendar, Clock, Users, Trash2, Navigation, Share2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface Trip {
@@ -53,7 +53,6 @@ export default function DriverDashboard() {
 
   const fetchDriverData = async (email: string) => {
     try {
-      // Fetch driver trips
       const tripsQuery = query(collection(db, "trips"), where("driverEmail", "==", email));
       const tripSnapshot = await getDocs(tripsQuery);
       const tripList: Trip[] = [];
@@ -65,7 +64,6 @@ export default function DriverDashboard() {
 
       tripSnapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        // Only keep trips that are not older than 4 days
         if (data.date && data.date >= cutoffDate) {
           tripList.push({ id: docSnap.id, ...data } as Trip);
         }
@@ -73,7 +71,6 @@ export default function DriverDashboard() {
 
       setTrips(tripList);
 
-      // Fetch bookings for these trips
       const bookingSnapshot = await getDocs(collection(db, "bookings"));
       const map: { [key: string]: Booking[] } = {};
       
@@ -100,6 +97,22 @@ export default function DriverDashboard() {
     } catch (error) {
       console.error("Error deleting trip:", error);
       alert("Failed to delete trip.");
+    }
+  };
+
+  // Social Media Sharing Handler
+  const handleShareTrip = (trip: Trip) => {
+    const shareText = `🚐 EasySafar Ride Alert!\nRoute: ${trip.origin} → ${trip.destination}\nDate: ${trip.date} at ${trip.time}\nPrice: Rs ${trip.price} per seat\nSeats Left: ${trip.seatsAvailable}\nBook your seat now on EasySafar!`;
+    
+    if (navigator.share) {
+      navigator.share({
+        title: "EasySafar Trip",
+        text: shareText,
+        url: window.location.origin + "/search",
+      }).catch((err) => console.log("Sharing error:", err));
+    } else {
+      navigator.clipboard.writeText(shareText);
+      alert("Trip details copied to clipboard! You can now paste and share it on Facebook or WhatsApp.");
     }
   };
 
@@ -183,6 +196,7 @@ export default function DriverDashboard() {
                   <span className="flex items-center gap-1"><Users size={14} /> {trip.seatsAvailable} Seats Left</span>
                 </div>
 
+                {/* Driver Action Buttons including Share */}
                 <div className="flex gap-2 pt-2">
                   <button
                     onClick={() => handleBroadcastLocation(trip.id)}
@@ -193,6 +207,13 @@ export default function DriverDashboard() {
                     }`}
                   >
                     <Navigation size={16} /> {isBroadcasting ? "Broadcasting Live GPS..." : "Start Live GPS"}
+                  </button>
+
+                  <button
+                    onClick={() => handleShareTrip(trip)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl text-sm transition shadow-sm flex items-center gap-1.5"
+                  >
+                    <Share2 size={16} /> Share
                   </button>
                 </div>
 
