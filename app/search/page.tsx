@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { db, auth } from "@/lib/firebase";
 import { collection, getDocs, addDoc, doc, updateDoc, increment } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
@@ -23,7 +23,7 @@ interface Trip {
   status: string;
 }
 
-export default function SearchPage() {
+function SearchContent() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [filteredTrips, setFilteredTrips] = useState<Trip[]>([]);
   const [originQuery, setOriginQuery] = useState("");
@@ -45,7 +45,6 @@ export default function SearchPage() {
       if (user && user.email) setUserEmail(user.email);
     });
     
-    // Fetch all trips first, then apply URL or default filter
     fetchAndFilterTrips();
 
     return () => unsubscribe();
@@ -69,7 +68,6 @@ export default function SearchPage() {
 
       setTrips(allTrips);
 
-      // Check if filter exists in URL query parameters
       const urlFilter = searchParams.get("filter") || "all";
       setActiveFilter(urlFilter);
       applyFilterLogic(originQuery, destinationQuery, urlFilter, allTrips);
@@ -86,19 +84,15 @@ export default function SearchPage() {
     });
 
     if (filterType === "car") {
-      // Show only private cars
       results = results.filter((trip) => trip.type !== "adda" && !trip.addaName);
     } else if (filterType === "van") {
-      // Show adda vans
       results = results.filter((trip) => trip.type === "adda" || trip.addaName);
     } else if (filterType === "full") {
-      // Show latest trip posts that have NO booked seats yet
       results = results.filter((trip) => {
         const total = trip.totalSeats || trip.seatsAvailable;
         return trip.seatsAvailable === total;
       });
     } else if (filterType === "cargo") {
-      // Show cargo space OR adda vans
       results = results.filter((trip) => trip.type === "adda" || trip.addaName || trip.type === "cargo");
     }
 
@@ -358,5 +352,13 @@ export default function SearchPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={<div className="text-center py-24 font-bold text-gray-500">Loading search options...</div>}>
+      <SearchContent />
+    </Suspense>
   );
 }
