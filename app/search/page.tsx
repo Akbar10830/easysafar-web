@@ -3,8 +3,8 @@ import { useState, useEffect } from "react";
 import { db, auth } from "@/lib/firebase";
 import { collection, getDocs, addDoc, doc, updateDoc, increment } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import { Search as SearchIcon, Calendar, Clock, Users, Car, Bus, Phone, Building2 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { Search as SearchIcon, Calendar, Clock, Users, Car, Bus, Phone, Building2, Truck } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 interface Trip {
   id: string;
@@ -14,6 +14,7 @@ interface Trip {
   time: string;
   price: number;
   seatsAvailable: number;
+  totalSeats?: number;
   type?: string;
   vehicleType?: string;
   addaName?: string;
@@ -29,54 +30,90 @@ export default function SearchPage() {
   const [destinationQuery, setDestinationQuery] = useState("");
   const [userEmail, setUserEmail] = useState<string | null>(null);
   
+  const [activeFilter, setActiveFilter] = useState<string>("all");
+  
   // Booking Modal State
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [seatsToBook, setSeatsToBook] = useState<number | "">(1);
   const [bookingType, setBookingType] = useState<"passenger" | "cargo">("passenger");
   
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user && user.email) setUserEmail(user.email);
     });
-    fetchTrips();
-    return () => unsubscribe();
-  }, []);
+    
+    // Fetch all trips first, then apply URL or default filter
+    fetchAndFilterTrips();
 
-  const fetchTrips = async () => {
+    return () => unsubscribe();
+  }, [searchParams]);
+
+  const fetchAndFilterTrips = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, "trips"));
       const allTrips: Trip[] = [];
       
-      // Calculate 3 days ago threshold
       const threeDaysAgo = new Date();
       threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
       const cutoffDate = threeDaysAgo.toISOString().split("T")[0];
 
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        // Only include active trips that are not older than 3 days
         if (data.status === "active" && data.date >= cutoffDate) {
           allTrips.push({ id: docSnap.id, ...data } as Trip);
         }
       });
 
       setTrips(allTrips);
-      setFilteredTrips(allTrips);
+
+      // Check if filter exists in URL query parameters
+      const urlFilter = searchParams.get("filter") || "all";
+      setActiveFilter(urlFilter);
+      applyFilterLogic(originQuery, destinationQuery, urlFilter, allTrips);
     } catch (error) {
       console.error("Error fetching trips:", error);
     }
   };
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    const results = trips.filter((trip) => {
-      const matchOrigin = trip.origin.toLowerCase().includes(originQuery.toLowerCase());
-      const matchDest = trip.destination.toLowerCase().includes(destinationQuery.toLowerCase());
+  const applyFilterLogic = (origin: string, destination: string, filterType: string, currentTrips: Trip[]) => {
+    let results = currentTrips.filter((trip) => {
+      const matchOrigin = trip.origin.toLowerCase().includes(origin.toLowerCase());
+      const matchDest = trip.destination.toLowerCase().includes(destination.toLowerCase());
       return matchOrigin && matchDest;
     });
+
+    if (filterType === "car") {
+      // Show only private cars
+      results = results.filter((trip) => trip.type !== "adda" && !trip.addaName);
+    } else if (filterType === "van") {
+      // Show adda vans
+      results = results.filter((trip) => trip.type === "adda" || trip.addaName);
+    } else if (filterType === "full") {
+      // Show latest trip posts that have NO booked seats yet
+      results = results.filter((trip) => {
+        const total = trip.totalSeats || trip.seatsAvailable;
+        return trip.seatsAvailable === total;
+      });
+    } else if (filterType === "cargo") {
+      // Show cargo space OR adda vans
+      results = results.filter((trip) => trip.type === "adda" || trip.addaName || trip.type === "cargo");
+    }
+
     setFilteredTrips(results);
+  };
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    applyFilterLogic(originQuery, destinationQuery, activeFilter, trips);
+  };
+
+  const handleCategoryClick = (category: string) => {
+    setActiveFilter(category);
+    router.push(`/search?filter=${category}`, { scroll: false });
+    applyFilterLogic(originQuery, destinationQuery, category, trips);
   };
 
   const handleBookTrip = async () => {
@@ -133,7 +170,7 @@ export default function SearchPage() {
         <h1 className="text-3xl font-bold text-gray-900">Find Rides & Vans</h1>
       </div>
 
-      <form onSubmit={handleSearch} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mb-8 space-y-4">
+      <form onSubmit={handleSearch} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mb-6 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">From</label>
@@ -161,19 +198,53 @@ export default function SearchPage() {
         </button>
       </form>
 
+      {/* Interactive Category Filter Bar */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-8">
+        <button
+          onClick={() => handleCategoryClick("all")}
+          className={`py-2.5 px-3 rounded-xl font-bold text-xs transition border ${activeFilter === "all" ? "bg-[#185FA5] text-white border-[#185FA5]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
+        >
+          All Options
+        </button>
+        <button
+          onClick={() => handleCategoryClick("car")}
+          className={`py-2.5 px-3 rounded-xl font-bold text-xs transition border flex items-center justify-center gap-1.5 ${activeFilter === "car" ? "bg-[#185FA5] text-white border-[#185FA5]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
+        >
+          <Car size={14} /> Private Cars
+        </button>
+        <button
+          onClick={() => handleCategoryClick("van")}
+          className={`py-2.5 px-3 rounded-xl font-bold text-xs transition border flex items-center justify-center gap-1.5 ${activeFilter === "van" ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
+        >
+          <Bus size={14} /> Local Vans
+        </button>
+        <button
+          onClick={() => handleCategoryClick("full")}
+          className={`py-2.5 px-3 rounded-xl font-bold text-xs transition border flex items-center justify-center gap-1.5 ${activeFilter === "full" ? "bg-amber-600 text-white border-amber-600" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
+        >
+          <Users size={14} /> Full Vehicle
+        </button>
+        <button
+          onClick={() => handleCategoryClick("cargo")}
+          className={`py-2.5 px-3 rounded-xl font-bold text-xs transition border flex items-center justify-center gap-1.5 col-span-2 md:col-span-1 ${activeFilter === "cargo" ? "bg-purple-600 text-white border-purple-600" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
+        >
+          <Truck size={14} /> Cargo & Vans
+        </button>
+      </div>
+
       <div className="space-y-4">
         {filteredTrips.length === 0 ? (
           <div className="bg-white p-8 rounded-2xl border border-gray-200 text-center text-gray-500">
-            No active or upcoming routes found matching your search.
+            No active routes found matching this category filter.
           </div>
         ) : (
           filteredTrips.map((trip) => (
             <div key={trip.id} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  {trip.type === "adda" ? (
+                  {trip.type === "adda" || trip.addaName ? (
                     <span className="bg-green-100 text-green-700 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
-                      <Bus size={12} /> Adda Van ({trip.vehicleType})
+                      <Bus size={12} /> Adda Van ({trip.vehicleType || "Standard"})
                     </span>
                   ) : (
                     <span className="bg-blue-100 text-[#185FA5] text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
