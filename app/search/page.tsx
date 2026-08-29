@@ -31,6 +31,7 @@ function SearchContent() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   
   const [activeFilter, setActiveFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<string>("default");
   
   // Booking Modal State
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
@@ -70,13 +71,13 @@ function SearchContent() {
 
       const urlFilter = searchParams.get("filter") || "all";
       setActiveFilter(urlFilter);
-      applyFilterLogic(originQuery, destinationQuery, urlFilter, allTrips);
+      applyFilterLogic(originQuery, destinationQuery, urlFilter, sortBy, allTrips);
     } catch (error) {
       console.error("Error fetching trips:", error);
     }
   };
 
-  const applyFilterLogic = (origin: string, destination: string, filterType: string, currentTrips: Trip[]) => {
+  const applyFilterLogic = (origin: string, destination: string, filterType: string, sortType: string, currentTrips: Trip[]) => {
     let results = currentTrips.filter((trip) => {
       const matchOrigin = trip.origin.toLowerCase().includes(origin.toLowerCase());
       const matchDest = trip.destination.toLowerCase().includes(destination.toLowerCase());
@@ -96,6 +97,15 @@ function SearchContent() {
       results = results.filter((trip) => trip.type === "adda" || trip.addaName || trip.type === "cargo");
     }
 
+    // Apply Sorting
+    if (sortType === "price-asc") {
+      results.sort((a, b) => a.price - b.price);
+    } else if (sortType === "price-desc") {
+      results.sort((a, b) => b.price - a.price);
+    } else if (sortType === "date-asc") {
+      results.sort((a, b) => a.date.localeCompare(b.date));
+    }
+
     setFilteredTrips(results);
   };
 
@@ -107,13 +117,18 @@ function SearchContent() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    applyFilterLogic(originQuery, destinationQuery, activeFilter, trips);
+    applyFilterLogic(originQuery, destinationQuery, activeFilter, sortBy, trips);
   };
 
   const handleCategoryClick = (category: string) => {
     setActiveFilter(category);
     router.push(`/search?filter=${category}`, { scroll: false });
-    applyFilterLogic(originQuery, destinationQuery, category, trips);
+    applyFilterLogic(originQuery, destinationQuery, category, sortBy, trips);
+  };
+
+  const handleSortChange = (sortType: string) => {
+    setSortBy(sortType);
+    applyFilterLogic(originQuery, destinationQuery, activeFilter, sortType, trips);
   };
 
   const handleBookTrip = async () => {
@@ -212,7 +227,7 @@ function SearchContent() {
       </form>
 
       {/* Interactive Category Filter Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
         <button
           onClick={() => handleCategoryClick("all")}
           className={`py-2.5 px-3 rounded-xl font-bold text-xs transition border ${activeFilter === "all" ? "bg-[#185FA5] text-white border-[#185FA5]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
@@ -243,6 +258,26 @@ function SearchContent() {
         >
           <Truck size={14} /> Cargo & Vans
         </button>
+      </div>
+
+      {/* Sort Dropdown Bar */}
+      <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
+        <span className="text-xs font-bold text-gray-500 uppercase">
+          Showing {filteredTrips.length} results
+        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-gray-600">Sort by:</span>
+          <select
+            value={sortBy}
+            onChange={(e) => handleSortChange(e.target.value)}
+            className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-bold text-gray-800 outline-none focus:border-[#185FA5]"
+          >
+            <option value="default">Default</option>
+            <option value="price-asc">Price: Low to High</option>
+            <option value="price-desc">Price: High to Low</option>
+            <option value="date-asc">Earliest Date</option>
+          </select>
+        </div>
       </div>
 
       <div className="space-y-4">
