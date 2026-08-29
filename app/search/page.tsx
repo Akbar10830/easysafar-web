@@ -20,7 +20,9 @@ interface Trip {
   addaName?: string;
   phone?: string;
   driverPhone?: string;
+  driverEmail?: string;
   status: string;
+  luggage?: string;
 }
 
 function SearchContent() {
@@ -139,6 +141,12 @@ function SearchContent() {
     }
 
     if (!selectedTrip) return;
+
+    // Prevent a driver from booking their own trip
+    if (selectedTrip.driverEmail === userEmail) {
+      alert("You cannot book your own posted trip!");
+      return;
+    }
 
     const seatCount = typeof seatsToBook === "number" ? seatsToBook : 1;
 
@@ -313,9 +321,10 @@ function SearchContent() {
                   </div>
                 )}
 
-                <div className="flex items-center gap-4 text-sm text-gray-500">
+                <div className="flex items-center gap-4 text-sm text-gray-500 flex-wrap">
                   <span className="flex items-center gap-1"><Calendar size={14} /> {trip.date}</span>
                   <span className="flex items-center gap-1"><Clock size={14} /> {trip.time}</span>
+                  <span className="flex items-center gap-1 font-semibold text-gray-700">🧳 {trip.luggage || "Standard Bag"}</span>
                   <span className="flex items-center gap-1"><Phone size={14} /> {trip.phone || trip.driverPhone || "N/A"}</span>
                 </div>
               </div>

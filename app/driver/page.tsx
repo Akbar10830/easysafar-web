@@ -1,10 +1,10 @@
 "use client";
 import { useState, useEffect } from "react";
 import { db, auth } from "@/lib/firebase";
-import { collection, getDocs, query, where, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, where, doc, deleteDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import { Calendar, Clock, Users, Trash2, Navigation, Share2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { PlusCircle, Car, Calendar, Clock, Users, Trash2, MapPin, Phone, ArrowRight } from "lucide-react";
 
 interface Trip {
   id: string;
@@ -14,233 +14,325 @@ interface Trip {
   time: string;
   price: number;
   seatsAvailable: number;
-  totalSeats?: number;
-  status: string;
-  vehicleType?: string;
-  vehicleIdentifier?: string;
-  liveLat?: number;
-  liveLng?: number;
-}
-
-interface Booking {
-  id: string;
-  tripId: string;
-  passengerEmail: string;
-  seatsBooked: number;
-  totalPrice: number;
-  type: string;
+  phone: string;
+  luggage?: string;
 }
 
 export default function DriverDashboard() {
   const [trips, setTrips] = useState<Trip[]>([]);
-  const [bookingsMap, setBookingsMap] = useState<{ [key: string]: Booking[] }>({});
+  const [loading, setLoading] = useState(true);
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [broadcastingId, setBroadcastingId] = useState<string | null>(null);
-  
+
+  // Modal State for posting a new trip
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [origin, setOrigin] = useState("");
+  const [destination, setDestination] = useState("");
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+  const [price, setPrice] = useState<number | "">("");
+  const [seatsAvailable, setSeatsAvailable] = useState<number | "">(4);
+  const [phone, setPhone] = useState("");
+  const [luggage, setLuggage] = useState("Standard Bag");
+  const [submitting, setSubmitting] = useState(false);
+
   const router = useRouter();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user && user.email) {
-        setUserEmail(user.email);
-        fetchDriverData(user.email);
-      } else {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user || !user.email) {
         router.push("/auth");
+        return;
       }
+      setUserEmail(user.email);
+      fetchDriverTrips(user.email);
     });
     return () => unsubscribe();
   }, [router]);
 
-  const fetchDriverData = async (email: string) => {
+  const fetchDriverTrips = async (email: string) => {
     try {
-      const tripsQuery = query(collection(db, "trips"), where("driverEmail", "==", email));
-      const tripSnapshot = await getDocs(tripsQuery);
-      const tripList: Trip[] = [];
-
-      // Calculate 4 days ago threshold
-      const fourDaysAgo = new Date();
-      fourDaysAgo.setDate(fourDaysAgo.getDate() - 4);
-      const cutoffDate = fourDaysAgo.toISOString().split("T")[0];
-
-      tripSnapshot.forEach((docSnap) => {
+      const q = query(collection(db, "trips"), where("driverEmail", "==", email));
+      const querySnapshot = await getDocs(q);
+      const userTrips: Trip[] = [];
+      querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        if (data.date && data.date >= cutoffDate) {
-          tripList.push({ id: docSnap.id, ...data } as Trip);
+        if (data.status === "active") {
+          userTrips.push({ id: docSnap.id, ...data } as Trip);
         }
       });
-
-      setTrips(tripList);
-
-      const bookingSnapshot = await getDocs(collection(db, "bookings"));
-      const map: { [key: string]: Booking[] } = {};
-      
-      bookingSnapshot.forEach((docSnap) => {
-        const bData = docSnap.data() as Booking;
-        if (!map[bData.tripId]) {
-          map[bData.tripId] = [];
-        }
-        map[bData.tripId].push({ id: docSnap.id, ...bData });
-      });
-
-      setBookingsMap(map);
+      setTrips(userTrips);
     } catch (error) {
-      console.error("Error fetching driver data:", error);
+      console.error("Error fetching trips:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePostTrip = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userEmail) return;
+
+    setSubmitting(true);
+    try {
+      await addDoc(collection(db, "trips"), {
+        driverEmail: userEmail,
+        origin,
+        destination,
+        date,
+        time,
+        price: Number(price),
+        seatsAvailable: Number(seatsAvailable),
+        totalSeats: Number(seatsAvailable),
+        phone,
+        luggage,
+        status: "active",
+        createdAt: new Date(),
+      });
+
+      setIsModalOpen(false);
+      setOrigin("");
+      setDestination("");
+      setDate("");
+      setTime("");
+      setPrice("");
+      setSeatsAvailable(4);
+      setPhone("");
+      fetchDriverTrips(userEmail);
+      alert("Trip posted successfully!");
+    } catch (error) {
+      console.error("Error posting trip:", error);
+      alert("Failed to post trip.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleDeleteTrip = async (tripId: string) => {
-    if (!confirm("Are you sure you want to delete this trip?")) return;
+    if (!confirm("Are you sure you want to delete this route?")) return;
     try {
       await deleteDoc(doc(db, "trips", tripId));
-      setTrips(trips.filter((t) => t.id !== tripId));
-      alert("Trip deleted successfully.");
+      if (userEmail) fetchDriverTrips(userEmail);
     } catch (error) {
       console.error("Error deleting trip:", error);
       alert("Failed to delete trip.");
     }
   };
 
-  // Social Media Sharing Handler
-  const handleShareTrip = (trip: Trip) => {
-    const shareText = `🚐 EasySafar Ride Alert!\nRoute: ${trip.origin} → ${trip.destination}\nDate: ${trip.date} at ${trip.time}\nPrice: Rs ${trip.price} per seat\nSeats Left: ${trip.seatsAvailable}\nBook your seat now on EasySafar!`;
-    
-    if (navigator.share) {
-      navigator.share({
-        title: "EasySafar Trip",
-        text: shareText,
-        url: window.location.origin + "/search",
-      }).catch((err) => console.log("Sharing error:", err));
-    } else {
-      navigator.clipboard.writeText(shareText);
-      alert("Trip details copied to clipboard! You can now paste and share it on Facebook or WhatsApp.");
-    }
-  };
-
-  const handleBroadcastLocation = (tripId: string) => {
-    if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser");
-      return;
-    }
-
-    setBroadcastingId(tripId);
-    alert("Live GPS broadcasting started! Your location will update in real-time.");
-
-    navigator.geolocation.watchPosition(
-      async (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
-        try {
-          const tripRef = doc(db, "trips", tripId);
-          await updateDoc(tripRef, {
-            liveLat: lat,
-            liveLng: lng,
-          });
-        } catch (error) {
-          console.error("Error updating live location:", error);
-        }
-      },
-      (error) => {
-        console.error("Geolocation error:", error);
-        alert("Unable to retrieve your location. Check GPS permissions.");
-        setBroadcastingId(null);
-      },
-      { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
-    );
-  };
+  if (loading) {
+    return <div className="text-center py-28 font-bold text-gray-500">Loading your captain dashboard...</div>;
+  }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 pb-24">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Driver Dashboard</h1>
+    <div className="max-w-4xl mx-auto px-4 py-8 pb-28 space-y-8">
+      
+      {/* Header Banner */}
+      <div className="bg-gradient-to-r from-[#185FA5] to-blue-700 text-white p-8 rounded-3xl shadow-lg flex flex-col md:flex-row justify-between items-center gap-6">
+        <div className="space-y-2 text-center md:text-left">
+          <span className="bg-white/25 text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full">Captain Portal</span>
+          <h1 className="text-3xl font-black">Driver Dashboard</h1>
+          <p className="text-blue-100 text-sm max-w-md">Manage your active routes, connect with passengers, and fill your seats effortlessly.</p>
+        </div>
         <button 
-          onClick={() => router.push("/driver/post")}
-          className="bg-[#185FA5] hover:bg-[#124b82] text-white font-bold px-4 py-2.5 rounded-xl text-sm transition shadow-sm"
+          onClick={() => setIsModalOpen(true)}
+          className="bg-white text-[#185FA5] hover:bg-blue-50 font-black px-6 py-3 rounded-2xl shadow-md transition flex items-center gap-2 text-sm whitespace-nowrap"
         >
-          + Post New Trip
+          <PlusCircle size={18} /> + Post New Trip
         </button>
       </div>
 
-      <div className="space-y-6">
+      {/* Trips Section */}
+      <div className="space-y-4">
+        <h2 className="text-xl font-black text-gray-900">Your Active Routes</h2>
+
         {trips.length === 0 ? (
-          <div className="bg-white p-8 rounded-2xl border border-gray-200 text-center text-gray-500">
-            No active trips found within the last 4 days. Post a new route to get started!
+          <div className="bg-white p-12 rounded-3xl border border-gray-200 text-center space-y-4 shadow-sm">
+            <div className="w-16 h-16 bg-blue-50 text-[#185FA5] rounded-full flex items-center justify-center mx-auto">
+              <Car size={32} />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-bold text-gray-900 text-base">No active routes posted</h3>
+              <p className="text-xs text-gray-500 max-w-xs mx-auto">Post your upcoming travel route to let passengers book seats or cargo space.</p>
+            </div>
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-[#185FA5] hover:bg-[#124b82] text-white font-bold px-6 py-2.5 rounded-xl text-xs transition shadow-sm"
+            >
+              Post Your First Route
+            </button>
           </div>
         ) : (
-          trips.map((trip) => {
-            const tripBookings = bookingsMap[trip.id] || [];
-            const isBroadcasting = broadcastingId === trip.id;
-
-            return (
-              <div key={trip.id} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="bg-green-100 text-green-700 text-xs px-2.5 py-1 rounded-full font-bold">
-                      {trip.status.toUpperCase()}
-                    </span>
-                    <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2 mt-2">
-                      {trip.origin} <span className="text-gray-400">→</span> {trip.destination}
-                    </h3>
-                  </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {trips.map((trip) => (
+              <div key={trip.id} className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-4 relative group hover:border-[#185FA5] transition">
+                <div className="flex justify-between items-center">
+                  <span className="bg-blue-50 text-[#185FA5] text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
+                    <Car size={12} /> Active Trip
+                  </span>
                   <button 
                     onClick={() => handleDeleteTrip(trip.id)}
-                    className="text-red-500 hover:text-red-700 p-2 transition"
-                    title="Delete Trip"
+                    className="text-gray-400 hover:text-red-600 p-2 transition rounded-xl hover:bg-red-50"
+                    title="Delete Route"
                   >
-                    <Trash2 size={18} />
+                    <Trash2 size={16} />
                   </button>
                 </div>
 
-                <div className="flex flex-wrap gap-4 text-sm text-gray-500 border-t border-gray-100 pt-3">
-                  <span className="flex items-center gap-1"><Calendar size={14} /> {trip.date}</span>
-                  <span className="flex items-center gap-1"><Clock size={14} /> {trip.time}</span>
-                  <span className="flex items-center gap-1"><Users size={14} /> {trip.seatsAvailable} Seats Left</span>
+                <div className="text-lg font-black text-gray-900 flex items-center gap-2">
+                  {trip.origin} <ArrowRight size={16} className="text-[#185FA5]" /> {trip.destination}
                 </div>
 
-                {/* Driver Action Buttons including Share */}
-                <div className="flex gap-2 pt-2">
-                  <button
-                    onClick={() => handleBroadcastLocation(trip.id)}
-                    className={`flex-1 font-bold py-2.5 rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-sm ${
-                      isBroadcasting 
-                        ? "bg-amber-500 hover:bg-amber-600 text-white animate-pulse" 
-                        : "bg-emerald-600 hover:bg-emerald-700 text-white"
-                    }`}
-                  >
-                    <Navigation size={16} /> {isBroadcasting ? "Broadcasting Live GPS..." : "Start Live GPS"}
-                  </button>
-
-                  <button
-                    onClick={() => handleShareTrip(trip)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl text-sm transition shadow-sm flex items-center gap-1.5"
-                  >
-                    <Share2 size={16} /> Share
-                  </button>
+                <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 bg-gray-50 p-3 rounded-2xl">
+                  <span className="flex items-center gap-1.5"><Calendar size={14} className="text-[#185FA5]" /> {trip.date}</span>
+                  <span className="flex items-center gap-1.5"><Clock size={14} className="text-[#185FA5]" /> {trip.time}</span>
+                  <span className="flex items-center gap-1.5"><Users size={14} className="text-[#185FA5]" /> {trip.seatsAvailable} Seats Left</span>
+                  <span className="flex items-center gap-1.5 font-semibold text-gray-700">🧳 {trip.luggage || "Standard Bag"}</span>
                 </div>
 
-                <div className="bg-gray-50 p-4 rounded-xl space-y-2 mt-4">
-                  <h4 className="font-bold text-gray-800 text-sm flex items-center gap-1">
-                    <Users size={14} /> Booked Passengers ({tripBookings.length})
-                  </h4>
-                  {tripBookings.length === 0 ? (
-                    <p className="text-xs text-gray-500 italic">No passengers booked yet.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {tripBookings.map((b) => (
-                        <div key={b.id} className="flex justify-between items-center text-xs bg-white p-2.5 rounded-lg border border-gray-200">
-                          <span className="font-semibold text-gray-700">{b.passengerEmail}</span>
-                          <span className="bg-blue-50 text-[#185FA5] px-2 py-0.5 rounded font-bold">
-                            {b.type === "cargo" ? "Cargo" : `${b.seatsBooked} Seat(s)`} (Rs {b.totalPrice})
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+                  <div className="text-xs text-gray-500 flex items-center gap-1">
+                    <Phone size={12} /> {trip.phone}
+                  </div>
+                  <div className="text-lg font-black text-gray-900">
+                    Rs {trip.price} <span className="text-xs font-normal text-gray-500">/ seat</span>
+                  </div>
                 </div>
               </div>
-            );
-          })
+            ))}
+          </div>
         )}
       </div>
+
+      {/* Modern Modal for Posting Trip */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white max-w-lg w-full p-8 rounded-3xl shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center">
+              <h3 className="text-2xl font-black text-gray-900">Post a New Route</h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600 font-bold text-xl">✕</button>
+            </div>
+
+            <form onSubmit={handlePostTrip} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Pickup City</label>
+                  <input 
+                    type="text" 
+                    placeholder="e.g., Gilgit" 
+                    value={origin} 
+                    onChange={(e) => setOrigin(e.target.value)} 
+                    required
+                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Destination City</label>
+                  <input 
+                    type="text" 
+                    placeholder="e.g., Skardu" 
+                    value={destination} 
+                    onChange={(e) => setDestination(e.target.value)} 
+                    required
+                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Departure Date</label>
+                  <input 
+                    type="date" 
+                    value={date} 
+                    onChange={(e) => setDate(e.target.value)} 
+                    required
+                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Departure Time</label>
+                  <input 
+                    type="time" 
+                    value={time} 
+                    onChange={(e) => setTime(e.target.value)} 
+                    required
+                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Price per Seat (Rs)</label>
+                  <input 
+                    type="number" 
+                    placeholder="e.g., 1500" 
+                    value={price} 
+                    onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))} 
+                    required
+                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Available Seats</label>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    max="20"
+                    value={seatsAvailable} 
+                    onChange={(e) => setSeatsAvailable(e.target.value === "" ? "" : Number(e.target.value))} 
+                    required
+                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Contact Phone Number</label>
+                  <input 
+                    type="text" 
+                    placeholder="e.g., 0300-1234567" 
+                    value={phone} 
+                    onChange={(e) => setPhone(e.target.value)} 
+                    required
+                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Luggage Allowance</label>
+                  <select 
+                    value={luggage} 
+                    onChange={(e) => setLuggage(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
+                  >
+                    <option value="Standard Bag">Standard Backpack / Small Bag</option>
+                    <option value="Large Suitcase Allowed">Large Suitcase Allowed</option>
+                    <option value="Extra Cargo Space">Extra Cargo Space Available</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button 
+                  type="button" 
+                  onClick={() => setIsModalOpen(false)}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3.5 rounded-2xl transition text-sm"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={submitting}
+                  className="flex-1 bg-[#185FA5] hover:bg-[#124b82] text-white font-bold py-3.5 rounded-2xl transition shadow-md text-sm"
+                >
+                  {submitting ? "Posting..." : "Publish Route"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
