@@ -1,76 +1,33 @@
 "use client";
-import { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
-// @ts-ignore
-import L from "leaflet";
-import { db } from "@/lib/firebase";
-import { collection, getDocs } from "firebase/firestore";
+import { Car, MapPin } from "lucide-react";
 
-const customIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
-
-interface DriverLocation {
-  id: string;
+interface LiveMapProps {
   origin?: string;
   destination?: string;
-  liveLat?: number;
-  liveLng?: number;
-  vehicleType?: string;
-  vehicleIdentifier?: string;
+  driverLocation?: { lat: number; lng: number };
 }
 
-export default function LiveMap() {
-  const [drivers, setDrivers] = useState<DriverLocation[]>([]);
-
-  useEffect(() => {
-    const fetchActiveDrivers = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, "trips"));
-        const activeList: DriverLocation[] = [];
-        querySnapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (data.liveLat && data.liveLng) {
-            activeList.push({ id: docSnap.id, ...data } as DriverLocation);
-          }
-        });
-        setDrivers(activeList);
-      } catch (error) {
-        console.error("Error fetching live locations:", error);
-      }
-    };
-
-    fetchActiveDrivers();
-  }, []);
-
-  const defaultCenter: [number, number] = [35.9208, 74.3087];
-
+export default function LiveMap({ origin, destination, driverLocation }: LiveMapProps) {
   return (
-    <div className="w-full h-72 rounded-xl overflow-hidden shadow-inner relative z-10">
-      <MapContainer center={defaultCenter} zoom={8} style={{ height: "100%", width: "100%" }}>
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        {drivers.map((driver) => {
-          if (!driver.liveLat || !driver.liveLng) return null;
-          return (
-            <Marker key={driver.id} position={[driver.liveLat, driver.liveLng]} icon={customIcon}>
-              <Popup>
-                <div className="text-xs font-bold">
-                  <p>{driver.origin} → {driver.destination}</p>
-                  <p className="text-green-600">{driver.vehicleType || "Vehicle"} ({driver.vehicleIdentifier || "Active"})</p>
-                </div>
-              </Popup>
-            </Marker>
-          );
-        })}
-      </MapContainer>
+    <div className="relative bg-blue-50 rounded-2xl h-80 flex flex-col items-center justify-center p-6 border border-blue-100 overflow-hidden text-center space-y-4 shadow-inner">
+      <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#185FA5_1.5px,transparent_1.5px)] [background-size:20px_20px]"></div>
+      
+      <div className="relative z-10 bg-white/90 backdrop-blur-md px-4 py-2 rounded-xl shadow-sm border border-blue-100 flex items-center gap-3 text-xs font-bold text-gray-700">
+        <span className="flex items-center gap-1 text-[#185FA5]"><MapPin size={14} /> {origin || "Origin"}</span>
+        <span>→</span>
+        <span className="flex items-center gap-1 text-green-600"><MapPin size={14} /> {destination || "Destination"}</span>
+      </div>
+
+      <div className="relative z-10 w-16 h-16 bg-[#185FA5] text-white rounded-full flex items-center justify-center shadow-xl animate-bounce">
+        <Car size={30} />
+      </div>
+
+      <div className="relative z-10 space-y-1">
+        <h3 className="font-black text-gray-900 text-sm">Real-Time GPS Synchronization Active</h3>
+        <p className="text-xs text-gray-500">
+          {driverLocation ? `Lat: ${driverLocation.lat}, Lng: ${driverLocation.lng}` : "Awaiting driver GPS broadcast..."}
+        </p>
+      </div>
     </div>
   );
 }

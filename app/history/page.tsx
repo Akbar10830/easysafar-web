@@ -3,13 +3,8 @@ import { useState, useEffect } from "react";
 import { db, auth } from "@/lib/firebase";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import { Calendar, Clock, MapPin } from "lucide-react";
-import dynamic from "next/dynamic";
-
-const MapWithNoSSR = dynamic(() => import("@/components/LiveMap"), { 
-  ssr: false,
-  loading: () => <p className="p-4 text-gray-500">Loading interactive map...</p>
-});
+import { useRouter } from "next/navigation";
+import { Calendar, Clock, MapPin, Phone, Car, ShieldCheck } from "lucide-react";
 
 interface Booking {
   id: string;
@@ -26,86 +21,87 @@ interface Booking {
 
 export default function HistoryPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [activeTrackingTrip, setActiveTrackingTrip] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user && user.email) {
-        try {
-          const q = query(collection(db, "bookings"), where("passengerEmail", "==", user.email));
-          const querySnapshot = await getDocs(q);
-          const list: Booking[] = [];
+      if (!user || !user.email) {
+        router.push("/auth");
+        return;
+      }
 
-          // Calculate 3 days ago threshold (Current date: Aug 24, 2026)
-          const threeDaysAgo = new Date();
-          threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-          const cutoffDate = threeDaysAgo.toISOString().split("T")[0];
-
-          querySnapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            // Only keep bookings from the last 3 days
-            if (data.date && data.date >= cutoffDate) {
-              list.push({ id: docSnap.id, ...data } as Booking);
-            }
-          });
-
-          setBookings(list);
-        } catch (error) {
-          console.error("Error fetching bookings:", error);
-        }
+      try {
+        const q = query(collection(db, "bookings"), where("passengerEmail", "==", user.email));
+        const querySnapshot = await getDocs(q);
+        const userBookings: Booking[] = [];
+        querySnapshot.forEach((docSnap) => {
+          userBookings.push({ id: docSnap.id, ...docSnap.data() } as Booking);
+        });
+        setBookings(userBookings);
+      } catch (error) {
+        console.error("Error fetching bookings:", error);
+      } finally {
+        setLoading(false);
       }
     });
+
     return () => unsubscribe();
-  }, []);
+  }, [router]);
+
+  if (loading) {
+    return <div className="text-center py-24 font-bold text-gray-500">Loading your bookings...</div>;
+  }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 pb-24">
-      <h1 className="text-3xl font-bold text-gray-900 mb-6">Your Bookings & Tracking</h1>
+    <div className="max-w-3xl mx-auto px-4 py-8 pb-24 space-y-6">
+      <h1 className="text-3xl font-bold text-gray-900">Your Booking History</h1>
 
       {bookings.length === 0 ? (
-        <div className="bg-white p-8 rounded-2xl border border-gray-200 text-center text-gray-500">
-          No recent bookings found within the last 3 days.
+        <div className="bg-white p-8 rounded-2xl border border-gray-200 text-center text-gray-500 space-y-3">
+          <p>You haven&apos;t booked any trips yet.</p>
+          <button 
+            onClick={() => router.push("/search")}
+            className="bg-[#185FA5] text-white font-bold px-6 py-2.5 rounded-xl text-sm shadow-sm hover:bg-[#124b82] transition"
+          >
+            Find Rides Now
+          </button>
         </div>
       ) : (
         <div className="space-y-4">
           {bookings.map((booking) => (
             <div key={booking.id} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-4">
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="bg-blue-100 text-[#185FA5] text-xs px-2.5 py-1 rounded-full font-bold">
-                      {booking.type === "cargo" ? "Cargo Transport" : `${booking.seatsBooked || 1} Seat(s)`}
-                    </span>
-                  </div>
-                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    {booking.origin} <span className="text-gray-400">→</span> {booking.destination}
-                  </h3>
-                </div>
-                <div className="text-right">
-                  <span className="text-lg font-black text-gray-900">
-                    Rs {typeof booking.totalPrice === "number" ? booking.totalPrice : 0}
-                  </span>
-                </div>
+              <div className="flex justify-between items-center">
+                <span className="bg-blue-100 text-[#185FA5] text-xs px-2.5 py-1 rounded-full font-bold uppercase">
+                  {booking.type} Booking
+                </span>
+                <span className="text-sm font-black text-gray-900">
+                  Rs {booking.totalPrice}
+                </span>
               </div>
 
-              <div className="flex flex-wrap gap-4 text-sm text-gray-500 border-t border-gray-100 pt-3">
+              <div className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                {booking.origin} <span className="text-gray-400">→</span> {booking.destination}
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs text-gray-500">
                 <span className="flex items-center gap-1"><Calendar size={14} /> {booking.date}</span>
                 <span className="flex items-center gap-1"><Clock size={14} /> {booking.time}</span>
-                <span className="flex items-center gap-1"><MapPin size={14} /> Driver: {booking.driverPhone || "N/A"}</span>
+                {booking.type === "passenger" && (
+                  <span className="flex items-center gap-1 font-semibold text-gray-700">💺 {booking.seatsBooked} Seats</span>
+                )}
+                <span className="flex items-center gap-1"><Phone size={14} /> Driver: {booking.driverPhone}</span>
               </div>
 
-              <button
-                onClick={() => setActiveTrackingTrip(activeTrackingTrip === booking.tripId ? null : booking.tripId)}
-                className="w-full bg-[#185FA5] hover:bg-[#124b82] text-white font-bold py-2.5 rounded-xl transition text-sm shadow-sm flex items-center justify-center gap-2"
-              >
-                <MapPin size={16} /> {activeTrackingTrip === booking.tripId ? "Close Map" : "Track Live Location"}
-              </button>
-
-              {activeTrackingTrip === booking.tripId && (
-                <div className="mt-4 border border-gray-200 rounded-xl overflow-hidden bg-gray-50 p-2">
-                  <MapWithNoSSR />
-                </div>
-              )}
+              {/* Live Tracking Button Link */}
+              <div className="pt-3 border-t border-gray-100 flex gap-3">
+                <button 
+                  onClick={() => router.push(`/track/${booking.tripId}`)}
+                  className="w-full bg-blue-50 hover:bg-blue-100 text-[#185FA5] font-bold py-2.5 rounded-xl transition text-xs flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  📍 Track Live Location
+                </button>
+              </div>
             </div>
           ))}
         </div>
