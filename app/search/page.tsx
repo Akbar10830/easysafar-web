@@ -3,7 +3,7 @@ import { Suspense, useState, useEffect } from "react";
 import { db, auth } from "@/lib/firebase";
 import { collection, getDocs, addDoc, doc, updateDoc, increment } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import { Search as SearchIcon, Calendar, Clock, Users, Car, Bus, Phone, Building2, Truck } from "lucide-react";
+import { Search as SearchIcon, Calendar, Clock, Users, Car, Bus, Phone, Building2, Truck, ArrowRightLeft } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 interface Trip {
@@ -99,6 +99,12 @@ function SearchContent() {
     setFilteredTrips(results);
   };
 
+  const handleSwapLocations = () => {
+    const temp = originQuery;
+    setOriginQuery(destinationQuery);
+    setDestinationQuery(temp);
+  };
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     applyFilterLogic(originQuery, destinationQuery, activeFilter, trips);
@@ -165,8 +171,8 @@ function SearchContent() {
       </div>
 
       <form onSubmit={handleSearch} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mb-6 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+          <div className="md:col-span-5">
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">From</label>
             <input 
               type="text" 
@@ -176,7 +182,19 @@ function SearchContent() {
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5] transition"
             />
           </div>
-          <div>
+
+          <div className="md:col-span-2 flex justify-center pt-2 md:pt-6">
+            <button
+              type="button"
+              onClick={handleSwapLocations}
+              className="p-3 bg-blue-50 hover:bg-blue-100 text-[#185FA5] rounded-2xl transition border border-blue-100 shadow-sm"
+              title="Swap From and To"
+            >
+              <ArrowRightLeft size={18} />
+            </button>
+          </div>
+
+          <div className="md:col-span-5">
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">To</label>
             <input 
               type="text" 
@@ -187,6 +205,7 @@ function SearchContent() {
             />
           </div>
         </div>
+
         <button type="submit" className="w-full bg-[#185FA5] hover:bg-[#124b82] text-white font-bold py-3 rounded-xl transition shadow-sm">
           Search Available Options
         </button>
