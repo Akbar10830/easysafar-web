@@ -3,7 +3,7 @@ import { Suspense, useState, useEffect } from "react";
 import { db, auth } from "@/lib/firebase";
 import { collection, getDocs, addDoc, doc, updateDoc, increment } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import { Search as SearchIcon, Calendar, Clock, Users, Car, Bus, Phone, Building2, Truck, ArrowRightLeft } from "lucide-react";
+import { Search as SearchIcon, Calendar, Clock, Users, Car, Bus, Phone, Building2, Truck, ArrowRightLeft, Sparkles } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 interface Trip {
@@ -23,6 +23,23 @@ interface Trip {
   driverEmail?: string;
   status: string;
   luggage?: string;
+  title?: string;
+}
+
+function HighlightText({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>;
+  const parts = text.split(new RegExp(`(${query})`, "gi"));
+  return (
+    <>
+      {parts.map((part, i) => 
+        part.toLowerCase() === query.toLowerCase() ? (
+          <mark key={i} className="bg-yellow-200 text-gray-900 rounded px-1">{part}</mark>
+        ) : (
+          part
+        )
+      )}
+    </>
+  );
 }
 
 function SearchContent() {
@@ -34,6 +51,10 @@ function SearchContent() {
   
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("default");
+
+  // AI Prompt State
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
   
   // Booking Modal State
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
@@ -79,13 +100,22 @@ function SearchContent() {
     }
   };
 
-  const applyFilterLogic = (origin: string, destination: string, filterType: string, sortType: string, currentTrips: Trip[]) => {
-    let results = currentTrips.filter((trip) => {
-      const matchOrigin = trip.origin.toLowerCase().includes(origin.toLowerCase());
-      const matchDest = trip.destination.toLowerCase().includes(destination.toLowerCase());
-      return matchOrigin && matchDest;
-    });
+  const applyFilterLogic = (origin: string, destination: string, filterType: string, sortType: string, currentTrips: Trip[], maxPrice?: number | null, requiredSeats?: number) => {
+    let results = [...currentTrips];
 
+    // 1. Origin Filter
+    const cleanOrigin = origin.trim().toLowerCase();
+    if (cleanOrigin) {
+      results = results.filter((trip) => trip.origin && trip.origin.toLowerCase().includes(cleanOrigin));
+    }
+
+    // 2. Destination Filter
+    const cleanDest = destination.trim().toLowerCase();
+    if (cleanDest) {
+      results = results.filter((trip) => trip.destination && trip.destination.toLowerCase().includes(cleanDest));
+    }
+
+    // 3. Category & Adda Filters
     if (filterType === "car") {
       results = results.filter((trip) => trip.type !== "adda" && !trip.addaName);
     } else if (filterType === "van") {
@@ -99,7 +129,17 @@ function SearchContent() {
       results = results.filter((trip) => trip.type === "adda" || trip.addaName || trip.type === "cargo");
     }
 
-    // Apply Sorting
+    // 4. Max Price / Budget Filter
+    if (maxPrice) {
+      results = results.filter((trip) => trip.price <= maxPrice);
+    }
+
+    // 5. Available Seats Filter
+    if (requiredSeats && requiredSeats > 1) {
+      results = results.filter((trip) => trip.seatsAvailable >= requiredSeats);
+    }
+
+    // 6. Sorting Logic
     if (sortType === "price-asc") {
       results.sort((a, b) => a.price - b.price);
     } else if (sortType === "price-desc") {
@@ -110,11 +150,45 @@ function SearchContent() {
 
     setFilteredTrips(results);
   };
+const handleAiSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiPrompt.trim()) return;
 
+    setIsAiLoading(true);
+    try {
+      const res = await fetch("/api/ai-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: aiPrompt }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        const newOrigin = data.from !== undefined ? data.from : originQuery;
+        const newDest = data.to !== undefined ? data.to : destinationQuery;
+        let currentSort = data.sortBy || sortBy;
+
+        if (data.from !== undefined) setOriginQuery(data.from);
+        if (data.to !== undefined) setDestinationQuery(data.to);
+        if (data.sortBy) setSortBy(data.sortBy);
+        if (data.passengers) setSeatsToBook(data.passengers);
+
+        applyFilterLogic(newOrigin, newDest, activeFilter, currentSort, trips, data.maxPrice, data.passengers);
+      } else {
+        alert(data.error || "AI could not parse your query.");
+      }
+    } catch (error) {
+      console.error("AI search request failed:", error);
+      alert("Something went wrong with AI search.");
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
   const handleSwapLocations = () => {
     const temp = originQuery;
     setOriginQuery(destinationQuery);
     setDestinationQuery(temp);
+    applyFilterLogic(destinationQuery, temp, activeFilter, sortBy, trips);
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -142,7 +216,6 @@ function SearchContent() {
 
     if (!selectedTrip) return;
 
-    // Prevent a driver from booking their own trip
     if (selectedTrip.driverEmail === userEmail) {
       alert("You cannot book your own posted trip!");
       return;
@@ -187,13 +260,38 @@ function SearchContent() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 pb-24">
-      <div className="flex items-center gap-3 mb-6">
+    <div className="max-w-3xl mx-auto px-4 py-8 pb-24 space-y-6">
+      <div className="flex items-center gap-3">
         <SearchIcon className="text-[#185FA5]" size={32} />
         <h1 className="text-3xl font-bold text-gray-900">Find Rides & Vans</h1>
       </div>
 
-      <form onSubmit={handleSearch} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mb-6 space-y-4">
+      {/* AI-Powered Trip Search Box */}
+      <div className="bg-gradient-to-r from-blue-900 to-[#185FA5] p-6 rounded-3xl shadow-lg text-white space-y-4">
+        <div className="flex items-center gap-2">
+          <Sparkles className="text-yellow-400" size={20} />
+          <h2 className="font-black text-base">Ask EasySafar AI</h2>
+        </div>
+        <form onSubmit={handleAiSearch} className="space-y-3">
+          <input 
+            type="text" 
+            placeholder="e.g., 'Find cheap private cars from Islamabad to Lahore'" 
+            value={aiPrompt} 
+            onChange={(e) => setAiPrompt(e.target.value)} 
+            className="w-full bg-white/10 border border-white/20 rounded-2xl px-4 py-3 text-white placeholder-blue-200 text-sm outline-none focus:bg-white/20 transition"
+          />
+          <button 
+            type="submit" 
+            disabled={isAiLoading}
+            className="w-full bg-white text-[#185FA5] hover:bg-blue-50 font-black py-3 rounded-2xl transition shadow-md text-sm flex items-center justify-center gap-2"
+          >
+            <Sparkles size={16} /> {isAiLoading ? "AI is analyzing route..." : "Search with AI"}
+          </button>
+        </form>
+      </div>
+
+      {/* Traditional Search Form */}
+      <form onSubmit={handleSearch} className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
           <div className="md:col-span-5">
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">From</label>
@@ -201,8 +299,11 @@ function SearchContent() {
               type="text" 
               placeholder="Origin city" 
               value={originQuery} 
-              onChange={(e) => setOriginQuery(e.target.value)} 
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5] transition"
+              onChange={(e) => {
+                setOriginQuery(e.target.value);
+                applyFilterLogic(e.target.value, destinationQuery, activeFilter, sortBy, trips);
+              }} 
+              className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5] transition"
             />
           </div>
 
@@ -223,19 +324,22 @@ function SearchContent() {
               type="text" 
               placeholder="Destination city" 
               value={destinationQuery} 
-              onChange={(e) => setDestinationQuery(e.target.value)} 
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5] transition"
+              onChange={(e) => {
+                setDestinationQuery(e.target.value);
+                applyFilterLogic(originQuery, e.target.value, activeFilter, sortBy, trips);
+              }} 
+              className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5] transition"
             />
           </div>
         </div>
 
-        <button type="submit" className="w-full bg-[#185FA5] hover:bg-[#124b82] text-white font-bold py-3 rounded-xl transition shadow-sm">
-          Search Available Options
+        <button type="submit" className="w-full bg-[#185FA5] hover:bg-[#124b82] text-white font-bold py-3.5 rounded-2xl transition shadow-sm text-sm">
+          Search Available Trips
         </button>
       </form>
 
       {/* Interactive Category Filter Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         <button
           onClick={() => handleCategoryClick("all")}
           className={`py-2.5 px-3 rounded-xl font-bold text-xs transition border ${activeFilter === "all" ? "bg-[#185FA5] text-white border-[#185FA5]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
@@ -269,7 +373,7 @@ function SearchContent() {
       </div>
 
       {/* Sort Dropdown Bar */}
-      <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
+      <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
         <span className="text-xs font-bold text-gray-500 uppercase">
           Showing {filteredTrips.length} results
         </span>
@@ -290,12 +394,12 @@ function SearchContent() {
 
       <div className="space-y-4">
         {filteredTrips.length === 0 ? (
-          <div className="bg-white p-8 rounded-2xl border border-gray-200 text-center text-gray-500">
-            No active routes found matching this category filter.
+          <div className="bg-white p-8 rounded-3xl border border-gray-200 text-center text-gray-500 text-sm">
+            No active routes found matching this query.
           </div>
         ) : (
           filteredTrips.map((trip) => (
-            <div key={trip.id} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div key={trip.id} className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   {trip.type === "adda" || trip.addaName ? (
@@ -311,8 +415,11 @@ function SearchContent() {
                   <span className="text-gray-500 text-xs flex items-center gap-1"><Users size={12} /> {trip.seatsAvailable} seats left</span>
                 </div>
 
+                {/* Highlighted Match Text */}
                 <div className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  {trip.origin} <span className="text-gray-400">→</span> {trip.destination}
+                  <span><HighlightText text={trip.origin} query={originQuery} /></span>
+                  <span className="text-gray-400">→</span>
+                  <span><HighlightText text={trip.destination} query={destinationQuery} /></span>
                 </div>
 
                 {trip.addaName && (
@@ -336,9 +443,9 @@ function SearchContent() {
                 <button 
                   onClick={() => {
                     setSelectedTrip(trip);
-                    setSeatsToBook(1);
+                    setSeatsToBook(typeof seatsToBook === "number" ? seatsToBook : 1);
                   }}
-                  className="bg-[#185FA5] hover:bg-[#124b82] text-white font-bold px-6 py-2.5 rounded-xl transition text-sm shadow-sm"
+                  className="bg-[#185FA5] hover:bg-[#124b82] text-white font-bold px-6 py-2.5 rounded-2xl transition text-sm shadow-sm"
                 >
                   Book Now
                 </button>
@@ -353,7 +460,7 @@ function SearchContent() {
           <div className="bg-white max-w-md w-full p-6 rounded-3xl shadow-xl space-y-6">
             <h3 className="text-xl font-bold text-gray-900">Confirm Your Booking</h3>
             
-            <div className="bg-gray-50 p-4 rounded-xl space-y-2 text-sm">
+            <div className="bg-gray-50 p-4 rounded-2xl space-y-2 text-sm">
               <p className="font-bold text-gray-800">{selectedTrip.origin} to {selectedTrip.destination}</p>
               <p className="text-gray-500">Date: {selectedTrip.date} at {selectedTrip.time}</p>
               <p className="text-gray-500">Price: Rs {selectedTrip.price} per seat</p>
@@ -365,14 +472,14 @@ function SearchContent() {
                 <button 
                   type="button"
                   onClick={() => setBookingType("passenger")}
-                  className={`py-3 rounded-xl font-bold text-sm border-2 transition ${bookingType === "passenger" ? "border-[#185FA5] bg-blue-50 text-[#185FA5]" : "border-gray-200 text-gray-500"}`}
+                  className={`py-3 rounded-2xl font-bold text-sm border-2 transition ${bookingType === "passenger" ? "border-[#185FA5] bg-blue-50 text-[#185FA5]" : "border-gray-200 text-gray-500"}`}
                 >
                   Passenger Seat
                 </button>
                 <button 
                   type="button"
                   onClick={() => setBookingType("cargo")}
-                  className={`py-3 rounded-xl font-bold text-sm border-2 transition ${bookingType === "cargo" ? "border-orange-500 bg-orange-50 text-orange-600" : "border-gray-200 text-gray-500"}`}
+                  className={`py-3 rounded-2xl font-bold text-sm border-2 transition ${bookingType === "cargo" ? "border-orange-500 bg-orange-50 text-orange-600" : "border-gray-200 text-gray-500"}`}
                 >
                   Cargo Space
                 </button>
@@ -392,7 +499,7 @@ function SearchContent() {
                     setSeatsToBook(val === "" ? "" : parseInt(val));
                   }}
                   placeholder="Enter seats"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5]"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5]"
                 />
               </div>
             )}
@@ -400,13 +507,13 @@ function SearchContent() {
             <div className="flex gap-3 pt-2">
               <button 
                 onClick={() => setSelectedTrip(null)}
-                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition"
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-2xl transition"
               >
                 Cancel
               </button>
               <button 
                 onClick={handleBookTrip}
-                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition shadow-md"
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-2xl transition shadow-md"
               >
                 Confirm (Rs {bookingType === "passenger" ? selectedTrip.price * (typeof seatsToBook === "number" ? seatsToBook : 1) : selectedTrip.price})
               </button>

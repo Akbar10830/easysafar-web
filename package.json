@@ -4,11 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-  "build": "next build",
-  "start": "next start",
-  "lint": "echo 'Skipping lint'"
+    "build": "next build",
+    "start": "next start",
+    "lint": "echo 'Skipping lint'"
   },
   "dependencies": {
+    "@google/genai": "^2.19.0",
+    "@google/generative-ai": "^0.24.1",
     "firebase": "^12.17.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.31.0",
