@@ -57,7 +57,7 @@ export default function Home() {
               <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Destination</label>
               <input 
                 type="text" 
-                placeholder="e.g., Hunza, Islamabad" 
+                placeholder="e.g., Hunza, Skardu" 
                 value={destination} 
                 onChange={(e) => setDestination(e.target.value)} 
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-gray-900 text-sm font-medium outline-none focus:border-[#185FA5]"

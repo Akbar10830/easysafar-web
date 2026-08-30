@@ -275,7 +275,7 @@ const handleAiSearch = async (e: React.FormEvent) => {
         <form onSubmit={handleAiSearch} className="space-y-3">
           <input 
             type="text" 
-            placeholder="e.g., 'Find cheap private cars from Islamabad to Lahore'" 
+            placeholder="e.g., 'Find cheap private cars from Gilgit to Hunza'" 
             value={aiPrompt} 
             onChange={(e) => setAiPrompt(e.target.value)} 
             className="w-full bg-white/10 border border-white/20 rounded-2xl px-4 py-3 text-white placeholder-blue-200 text-sm outline-none focus:bg-white/20 transition"
