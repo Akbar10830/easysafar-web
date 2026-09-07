@@ -140,7 +140,7 @@ export default function Home() {
       <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-8 rounded-3xl border border-blue-100 space-y-4">
         <h2 className="text-xl font-black text-gray-900">Popular Routes Across GB</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {["Islamabad → Skardu", "Gilgit → Hunza", "Gilgit → Skardu", "Hunza → Sust", "Gilgit → Phander", "Astore → Gilgit"].map((route, i) => (
+          {[" Skardu → Gilgit", "Gilgit → Hunza", "Gilgit → Skardu", "Hunza → Sust", "Gilgit → Phander", "Astore → Gilgit"].map((route, i) => (
             <div key={i} className="bg-white p-4 rounded-xl border border-blue-100 font-bold text-gray-800 text-sm flex items-center justify-between shadow-sm">
               <span>{route}</span>
               <ArrowRight size={16} className="text-[#185FA5]" />

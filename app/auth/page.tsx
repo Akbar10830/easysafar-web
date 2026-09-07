@@ -1,31 +1,25 @@
 "use client";
+
 import { useState } from "react";
-import { db, auth } from "../../lib/firebase";
+import { auth } from "@/lib/firebase"; 
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc, getDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
-import { User, Car, Bus, Loader2, ShieldCheck } from "lucide-react";
+import { Bus } from "lucide-react";
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("passenger");
-  const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
-  // OTP Verification States (Used exclusively for Login)
-  const [step, setStep] = useState<"form" | "verify">("form");
-  const [otp, setOtp] = useState("");
-  const [generatedOtp, setGeneratedOtp] = useState("");
-
   const router = useRouter();
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!isLogin && !agreedToPrivacy) {
-      alert("You must agree to the Privacy Policy to create an account.");
+    setError("");
+
+    if (!email || !password) {
+      setError("Please enter both email and password.");
       return;
     }
 
@@ -33,203 +27,108 @@ export default function AuthPage() {
 
     try {
       if (isLogin) {
-        // Step 1 of Login: Generate 6-digit verification code and require confirmation
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
-        setGeneratedOtp(code);
-
-        alert(`[Security Verification]\nYour EasySafar login verification code sent to ${email} is: ${code}`);
-        setStep("verify");
-        setLoading(false);
+        // Direct Sign-In (No 6-digit code)
+        await signInWithEmailAndPassword(auth, email, password);
       } else {
-        // Registration remains instant without OTP
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await setDoc(doc(db, "users", userCredential.user.uid), {
-          email: email,
-          role: role,
-          createdAt: new Date(),
-        });
-
-        if (role === "captain") router.push("/driver");
-        else if (role === "adda_owner") router.push("/adda");
-        else router.push("/");
+        // Direct Account Creation (No 6-digit code)
+        await createUserWithEmailAndPassword(auth, email, password);
       }
-    } catch (error: any) {
-      console.error("Auth Error:", error);
-      alert(error.message);
-      setLoading(false);
-    }
-  };
-
-  // Step 2 of Login: Verify OTP and Sign In
-  const handleVerifyLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (otp !== generatedOtp) {
-      alert("Invalid verification code. Please try again.");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const userDoc = await getDoc(doc(db, "users", userCredential.user.uid));
       
-      if (userDoc.exists()) {
-        const userRole = userDoc.data().role;
-        if (userRole === "captain") router.push("/driver");
-        else if (userRole === "adda_owner") router.push("/adda");
-        else router.push("/");
+      // Redirect back to search page upon successful login/signup
+      router.push("/search");
+      
+    } catch (err: any) {
+      console.error("Authentication Error:", err);
+      // Simplify Firebase error messages for the user
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setError("Invalid email or password.");
+      } else if (err.code === 'auth/email-already-in-use') {
+        setError("An account with this email already exists.");
+      } else if (err.code === 'auth/weak-password') {
+        setError("Password should be at least 6 characters.");
       } else {
-        router.push("/");
+        setError("Authentication failed. Please try again.");
       }
-    } catch (error: any) {
-      console.error("Login Verification Error:", error);
-      alert(error.message);
-      setStep("form");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center px-4 py-8">
-      <div className="max-w-md w-full mx-auto bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-center items-center p-4">
+      <div className="max-w-md w-full bg-white rounded-3xl shadow-lg border border-gray-100 p-8">
+        
+        {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-black text-[#185FA5] mb-2">EasySafar</h1>
-          <p className="text-gray-500">
-            {step === "verify" ? "Enter Verification Code" : isLogin ? "Welcome back!" : "Create your account"}
+          <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-[#185FA5]">
+            <Bus size={32} />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {isLogin ? "Welcome back to EasySafar" : "Create your account"}
+          </h1>
+          <p className="text-sm text-gray-500 mt-2">
+            {isLogin ? "Enter your email and password to sign in." : "Sign up quickly with just an email and password."}
           </p>
         </div>
 
-        {step === "form" ? (
-          <form onSubmit={handleAuth} className="space-y-5">
-            
-            {!isLogin && (
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                <button
-                  type="button"
-                  onClick={() => setRole("passenger")}
-                  className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${role === "passenger" ? "border-[#185FA5] bg-blue-50 text-[#185FA5]" : "border-gray-100 bg-gray-50 text-gray-500"}`}
-                >
-                  <User size={24} className="mb-1" />
-                  <span className="text-xs font-bold">Passenger</span>
-                </button>
-                
-                <button
-                  type="button"
-                  onClick={() => setRole("captain")}
-                  className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${role === "captain" ? "border-[#D35400] bg-orange-50 text-[#D35400]" : "border-gray-100 bg-gray-50 text-gray-500"}`}
-                >
-                  <Car size={24} className="mb-1" />
-                  <span className="text-xs font-bold">Driver</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setRole("adda_owner")}
-                  className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${role === "adda_owner" ? "border-green-600 bg-green-50 text-green-600" : "border-gray-100 bg-gray-50 text-gray-500"}`}
-                >
-                  <Bus size={24} className="mb-1" />
-                  <span className="text-[10px] font-bold text-center leading-tight">Adda<br/>Owner</span>
-                </button>
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Email Address</label>
-              <input 
-                type="email" 
-                required
-                placeholder="Enter your email" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5] transition"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Password</label>
-              <input 
-                type="password" 
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full text-gray-900 font-medium border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-[#185FA5]"
-                placeholder="Enter your password"
-              />
-            </div>
-
-            {!isLogin && (
-              <div className="flex items-start gap-3 pt-2">
-                <input 
-                  type="checkbox" 
-                  id="privacy" 
-                  required
-                  checked={agreedToPrivacy}
-                  onChange={(e) => setAgreedToPrivacy(e.target.checked)}
-                  className="mt-1 h-4 w-4 rounded border-gray-300 text-[#185FA5] focus:ring-[#185FA5]"
-                />
-                <label htmlFor="privacy" className="text-xs text-gray-600 leading-relaxed">
-                  I agree to the <span className="text-[#185FA5] font-bold">Privacy Policy</span>, including the collection and real-time processing of location data for travel verification.
-                </label>
-              </div>
-            )}
-
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="w-full bg-[#185FA5] hover:bg-[#124b82] text-white font-bold py-4 rounded-xl transition shadow-md flex justify-center items-center gap-2"
-            >
-              {loading ? <Loader2 className="animate-spin" size={20} /> : (isLogin ? "Continue to Verification" : "Create Account")}
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleVerifyLogin} className="space-y-5">
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1 text-center">Enter 6-Digit Code sent to Email</label>
-              <input 
-                type="text" 
-                maxLength={6}
-                required
-                placeholder="123456" 
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-center text-2xl tracking-widest text-gray-900 font-black placeholder-gray-300 outline-none focus:border-[#185FA5] transition"
-              />
-            </div>
-
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl transition shadow-md flex justify-center items-center gap-2"
-            >
-              {loading ? <Loader2 className="animate-spin" size={20} /> : "Verify & Sign In"}
-            </button>
-
-            <div className="text-center pt-2">
-              <button 
-                type="button"
-                onClick={() => setStep("form")}
-                className="text-xs font-bold text-gray-500 hover:underline"
-              >
-                ← Back to Login Form
-              </button>
-            </div>
-          </form>
-        )}
-
-        {step === "form" && (
-          <div className="mt-6 text-center">
-            <p className="text-gray-500 text-sm">
-              {isLogin ? "Don't have an account?" : "Already have an account?"}
-              <button 
-                onClick={() => setIsLogin(!isLogin)} 
-                className="text-[#185FA5] font-bold ml-2 hover:underline"
-              >
-                {isLogin ? "Sign Up" : "Sign In"}
-              </button>
-            </p>
+        {/* Error Message Display */}
+        {error && (
+          <div className="bg-red-50 text-red-600 text-sm font-semibold p-4 rounded-xl mb-6 text-center border border-red-100">
+            {error}
           </div>
         )}
+
+        {/* Auth Form */}
+        <form onSubmit={handleAuth} className="space-y-5">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Email Address</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@example.com"
+              className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3.5 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5] transition"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3.5 text-gray-900 font-medium placeholder-gray-400 outline-none focus:border-[#185FA5] transition"
+              required
+              minLength={6}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-[#185FA5] hover:bg-[#124b82] text-white font-bold py-4 rounded-2xl transition shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {loading ? "Processing..." : (isLogin ? "Sign In" : "Sign Up")}
+          </button>
+        </form>
+
+        {/* Toggle Login/Signup */}
+        <div className="mt-8 text-center text-sm font-medium text-gray-600">
+          {isLogin ? "Don't have an account? " : "Already have an account? "}
+          <button
+            type="button"
+            onClick={() => {
+              setIsLogin(!isLogin);
+              setError(""); 
+            }}
+            className="text-[#185FA5] hover:underline font-bold focus:outline-none"
+          >
+            {isLogin ? "Sign Up" : "Sign In"}
+          </button>
+        </div>
+
       </div>
     </div>
   );
