@@ -1,10 +1,12 @@
 "use client";
-import { useState, useEffect } from "react";
-import { db, auth } from "@/lib/firebase";
-import { collection, addDoc, getDocs, query, where, doc, deleteDoc } from "firebase/firestore";
+
+import { useEffect, useState } from "react";
+import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import { collection, query, where, getDocs, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PlusCircle, Car, Calendar, Clock, Users, Trash2, MapPin, Phone, ArrowRight } from "lucide-react";
+import { Car, MapPin, Calendar, Clock, Users, Trash2, PlusCircle, Navigation } from "lucide-react";
 
 interface Trip {
   id: string;
@@ -14,53 +16,38 @@ interface Trip {
   time: string;
   price: number;
   seatsAvailable: number;
-  phone: string;
-  luggage?: string;
+  totalSeats: number;
+  lat?: number;
+  lng?: number;
 }
 
 export default function DriverDashboard() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-
-  // Modal State for posting a new trip
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [origin, setOrigin] = useState("");
-  const [destination, setDestination] = useState("");
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
-  const [price, setPrice] = useState<number | "">("");
-  const [seatsAvailable, setSeatsAvailable] = useState<number | "">(4);
-  const [phone, setPhone] = useState("");
-  const [luggage, setLuggage] = useState("Standard Bag");
-  const [submitting, setSubmitting] = useState(false);
-
   const router = useRouter();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (!user || !user.email) {
+      if (user && user.email) {
+        fetchMyTrips(user.email);
+      } else {
         router.push("/auth");
-        return;
       }
-      setUserEmail(user.email);
-      fetchDriverTrips(user.email);
     });
     return () => unsubscribe();
-  }, [router]);
+  }, []);
 
-  const fetchDriverTrips = async (email: string) => {
+  const fetchMyTrips = async (email: string) => {
     try {
       const q = query(collection(db, "trips"), where("driverEmail", "==", email));
       const querySnapshot = await getDocs(q);
-      const userTrips: Trip[] = [];
+      const myTrips: Trip[] = [];
       querySnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        if (data.status === "active") {
-          userTrips.push({ id: docSnap.id, ...data } as Trip);
-        }
+        myTrips.push({ id: docSnap.id, ...docSnap.data() } as Trip);
       });
-      setTrips(userTrips);
+      
+      myTrips.sort((a, b) => b.date.localeCompare(a.date));
+      setTrips(myTrips);
     } catch (error) {
       console.error("Error fetching trips:", error);
     } finally {
@@ -68,271 +55,120 @@ export default function DriverDashboard() {
     }
   };
 
-  const handlePostTrip = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!userEmail) return;
-
-    setSubmitting(true);
-    try {
-      await addDoc(collection(db, "trips"), {
-        driverEmail: userEmail,
-        origin,
-        destination,
-        date,
-        time,
-        price: Number(price),
-        seatsAvailable: Number(seatsAvailable),
-        totalSeats: Number(seatsAvailable),
-        phone,
-        luggage,
-        status: "active",
-        createdAt: new Date(),
-      });
-
-      setIsModalOpen(false);
-      setOrigin("");
-      setDestination("");
-      setDate("");
-      setTime("");
-      setPrice("");
-      setSeatsAvailable(4);
-      setPhone("");
-      fetchDriverTrips(userEmail);
-      alert("Trip posted successfully!");
-    } catch (error) {
-      console.error("Error posting trip:", error);
-      alert("Failed to post trip.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDeleteTrip = async (tripId: string) => {
-    if (!confirm("Are you sure you want to delete this route?")) return;
+  const handleDelete = async (tripId: string) => {
+    if (!confirm("Are you sure you want to delete this trip?")) return;
     try {
       await deleteDoc(doc(db, "trips", tripId));
-      if (userEmail) fetchDriverTrips(userEmail);
+      setTrips(trips.filter((trip) => trip.id !== tripId));
     } catch (error) {
       console.error("Error deleting trip:", error);
       alert("Failed to delete trip.");
     }
   };
 
+  const handleShareLocation = async (tripId: string) => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          const tripRef = doc(db, "trips", tripId);
+          
+          await updateDoc(tripRef, {
+            lat: latitude,
+            lng: longitude,
+            locationUpdatedAt: new Date().toISOString()
+          });
+
+          alert("Live location shared successfully!");
+          fetchMyTrips(auth.currentUser?.email || ""); 
+        } catch (error) {
+          console.error("Error sharing location:", error);
+          alert("Failed to update location in database.");
+        }
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        alert("Please enable location permissions in your browser settings.");
+      },
+      { enableHighAccuracy: true }
+    );
+  };
+
   if (loading) {
-    return <div className="text-center py-28 font-bold text-gray-500">Loading your captain dashboard...</div>;
+    return <div className="min-h-screen flex justify-center items-center font-bold text-gray-500">Loading your posts...</div>;
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 pb-28 space-y-8">
-      
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-[#185FA5] to-blue-700 text-white p-8 rounded-3xl shadow-lg flex flex-col md:flex-row justify-between items-center gap-6">
-        <div className="space-y-2 text-center md:text-left">
-          <span className="bg-white/25 text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full">Captain Portal</span>
-          <h1 className="text-3xl font-black">Driver Dashboard</h1>
-          <p className="text-blue-100 text-sm max-w-md">Manage your active routes, connect with passengers, and fill your seats effortlessly.</p>
+    <div className="max-w-3xl mx-auto px-4 py-8 pb-24 space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Car className="text-[#185FA5]" size={32} />
+          <h1 className="text-2xl font-bold text-gray-900">My Posted Trips</h1>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="bg-white text-[#185FA5] hover:bg-blue-50 font-black px-6 py-3 rounded-2xl shadow-md transition flex items-center gap-2 text-sm whitespace-nowrap"
-        >
-          <PlusCircle size={18} /> + Post New Trip
-        </button>
+        <Link href="/driver/post" className="bg-[#185FA5] hover:bg-[#124b82] text-white px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 shadow-sm">
+          <PlusCircle size={16} /> New
+        </Link>
       </div>
 
-      {/* Trips Section */}
-      <div className="space-y-4">
-        <h2 className="text-xl font-black text-gray-900">Your Active Routes</h2>
+      {trips.length === 0 ? (
+        <div className="bg-white p-8 rounded-3xl border border-gray-200 text-center text-gray-500 space-y-4 shadow-sm">
+          <p>You haven't posted any trips yet.</p>
+          <Link href="/driver/post" className="inline-block bg-blue-50 text-[#185FA5] font-bold px-6 py-2 rounded-xl border border-blue-100 transition hover:bg-blue-100">
+            Post your first trip
+          </Link>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {trips.map((trip) => (
+            <div key={trip.id} className="bg-white p-5 rounded-3xl shadow-sm border border-gray-200 flex flex-col gap-4 relative">
+              
+              <button onClick={() => handleDelete(trip.id)} className="absolute top-4 right-4 text-red-400 hover:text-red-600 transition bg-red-50 p-2 rounded-xl" title="Delete Trip">
+                <Trash2 size={18} />
+              </button>
 
-        {trips.length === 0 ? (
-          <div className="bg-white p-12 rounded-3xl border border-gray-200 text-center space-y-4 shadow-sm">
-            <div className="w-16 h-16 bg-blue-50 text-[#185FA5] rounded-full flex items-center justify-center mx-auto">
-              <Car size={32} />
-            </div>
-            <div className="space-y-1">
-              <h3 className="font-bold text-gray-900 text-base">No active routes posted</h3>
-              <p className="text-xs text-gray-500 max-w-xs mx-auto">Post your upcoming travel route to let passengers book seats or cargo space.</p>
-            </div>
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              className="bg-[#185FA5] hover:bg-[#124b82] text-white font-bold px-6 py-2.5 rounded-xl text-xs transition shadow-sm"
-            >
-              Post Your First Route
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {trips.map((trip) => (
-              <div key={trip.id} className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-4 relative group hover:border-[#185FA5] transition">
-                <div className="flex justify-between items-center">
-                  <span className="bg-blue-50 text-[#185FA5] text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
-                    <Car size={12} /> Active Trip
-                  </span>
-                  <button 
-                    onClick={() => handleDeleteTrip(trip.id)}
-                    className="text-gray-400 hover:text-red-600 p-2 transition rounded-xl hover:bg-red-50"
-                    title="Delete Route"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+              <div className="flex items-center gap-2 text-lg font-bold text-gray-900 pr-10">
+                <MapPin size={18} className="text-gray-400" />
+                {trip.origin} <span className="text-gray-400">→</span> {trip.destination}
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                <div className="bg-gray-50 p-3 rounded-2xl flex flex-col gap-1">
+                  <span className="text-gray-500 text-[10px] font-bold uppercase">Date & Time</span>
+                  <span className="font-semibold text-gray-800 flex items-center gap-1"><Calendar size={14} className="text-[#185FA5]"/> {trip.date}</span>
+                  <span className="font-semibold text-gray-800 flex items-center gap-1"><Clock size={14} className="text-[#185FA5]"/> {trip.time}</span>
                 </div>
-
-                <div className="text-lg font-black text-gray-900 flex items-center gap-2">
-                  {trip.origin} <ArrowRight size={16} className="text-[#185FA5]" /> {trip.destination}
+                <div className="bg-gray-50 p-3 rounded-2xl flex flex-col gap-1">
+                  <span className="text-gray-500 text-[10px] font-bold uppercase">Price</span>
+                  <span className="font-bold text-gray-900 text-base">Rs {trip.price}</span>
                 </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 bg-gray-50 p-3 rounded-2xl">
-                  <span className="flex items-center gap-1.5"><Calendar size={14} className="text-[#185FA5]" /> {trip.date}</span>
-                  <span className="flex items-center gap-1.5"><Clock size={14} className="text-[#185FA5]" /> {trip.time}</span>
-                  <span className="flex items-center gap-1.5"><Users size={14} className="text-[#185FA5]" /> {trip.seatsAvailable} Seats Left</span>
-                  <span className="flex items-center gap-1.5 font-semibold text-gray-700">🧳 {trip.luggage || "Standard Bag"}</span>
-                </div>
-
-                <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-                  <div className="text-xs text-gray-500 flex items-center gap-1">
-                    <Phone size={12} /> {trip.phone}
-                  </div>
-                  <div className="text-lg font-black text-gray-900">
-                    Rs {trip.price} <span className="text-xs font-normal text-gray-500">/ seat</span>
+                <div className="bg-gray-50 p-3 rounded-2xl flex flex-col gap-1 col-span-2 sm:col-span-2">
+                  <span className="text-gray-500 text-[10px] font-bold uppercase">Seats Available</span>
+                  <div className="flex items-center gap-2">
+                    <Users size={16} className={trip.seatsAvailable > 0 ? "text-green-600" : "text-red-600"} />
+                    <span className={`font-bold text-base ${trip.seatsAvailable > 0 ? "text-green-600" : "text-red-600"}`}>
+                      {trip.seatsAvailable} <span className="text-sm font-medium text-gray-600">/ {trip.totalSeats}</span>
+                    </span>
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
 
-      {/* Modern Modal for Posting Trip */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white max-w-lg w-full p-8 rounded-3xl shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center">
-              <h3 className="text-2xl font-black text-gray-900">Post a New Route</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600 font-bold text-xl">✕</button>
+              {/* Share Location Button */}
+              <button 
+                onClick={() => handleShareLocation(trip.id)} 
+                className="w-full bg-blue-50 text-[#185FA5] font-bold py-3 rounded-xl border border-blue-100 hover:bg-blue-100 transition flex items-center justify-center gap-2 mt-2"
+              >
+                <Navigation size={18} /> Update Live Location
+              </button>
+
             </div>
-
-            <form onSubmit={handlePostTrip} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Pickup City</label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g., Gilgit" 
-                    value={origin} 
-                    onChange={(e) => setOrigin(e.target.value)} 
-                    required
-                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Destination City</label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g., Skardu" 
-                    value={destination} 
-                    onChange={(e) => setDestination(e.target.value)} 
-                    required
-                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Departure Date</label>
-                  <input 
-                    type="date" 
-                    value={date} 
-                    onChange={(e) => setDate(e.target.value)} 
-                    required
-                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Departure Time</label>
-                  <input 
-                    type="time" 
-                    value={time} 
-                    onChange={(e) => setTime(e.target.value)} 
-                    required
-                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Price per Seat (Rs)</label>
-                  <input 
-                    type="number" 
-                    placeholder="e.g., 1500" 
-                    value={price} 
-                    onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))} 
-                    required
-                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Available Seats</label>
-                  <input 
-                    type="number" 
-                    min="1" 
-                    max="20"
-                    value={seatsAvailable} 
-                    onChange={(e) => setSeatsAvailable(e.target.value === "" ? "" : Number(e.target.value))} 
-                    required
-                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Contact Phone Number</label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g., 0300-1234567" 
-                    value={phone} 
-                    onChange={(e) => setPhone(e.target.value)} 
-                    required
-                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Luggage Allowance</label>
-                  <select 
-                    value={luggage} 
-                    onChange={(e) => setLuggage(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus:border-[#185FA5]"
-                  >
-                    <option value="Standard Bag">Standard Backpack / Small Bag</option>
-                    <option value="Large Suitcase Allowed">Large Suitcase Allowed</option>
-                    <option value="Extra Cargo Space">Extra Cargo Space Available</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button 
-                  type="button" 
-                  onClick={() => setIsModalOpen(false)}
-                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3.5 rounded-2xl transition text-sm"
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit" 
-                  disabled={submitting}
-                  className="flex-1 bg-[#185FA5] hover:bg-[#124b82] text-white font-bold py-3.5 rounded-2xl transition shadow-md text-sm"
-                >
-                  {submitting ? "Posting..." : "Publish Route"}
-                </button>
-              </div>
-            </form>
-          </div>
+          ))}
         </div>
       )}
-
     </div>
   );
 }
