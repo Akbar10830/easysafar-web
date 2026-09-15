@@ -4,7 +4,8 @@ import { db, auth } from "@/lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
-import { User, LogOut, Shield, FileText, ChevronRight, X, Mail, CheckCircle } from "lucide-react";
+import { User, LogOut, Shield, FileText, ChevronRight, X, CheckCircle, Ticket } from "lucide-react";
+import Link from "next/link";
 
 export default function ProfilePage() {
   const [user, setUser] = useState<any>(null);
@@ -48,31 +49,44 @@ export default function ProfilePage() {
       {user && (
         <div className="space-y-4">
           
-          {/* USER INFO CARD */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 text-center relative overflow-hidden">
             <span className="absolute top-4 right-4 bg-blue-100 text-[#185FA5] text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
               {userData?.role || "Passenger"}
             </span>
-
             <div className="w-20 h-20 bg-blue-50 text-[#185FA5] rounded-full flex items-center justify-center mx-auto mb-4">
               <User size={36} />
             </div>
-
             <h2 className="font-bold text-lg text-gray-900 mb-1">{user.email}</h2>
             <p className="text-gray-400 text-xs flex items-center justify-center gap-1">
               <CheckCircle size={12} className="text-green-500" /> Verified Account
             </p>
           </div>
 
-          {/* EXTRA OPTIONS SECTION */}
           <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
             
+            {/* THIS IS THE ONLY HISTORY BUTTON NOW: JUST BOOKED TRIPS */}
+            <Link 
+              href="/history"
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition border-b border-gray-100 text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div className="bg-blue-50 text-[#185FA5] p-2.5 rounded-xl">
+                  <Ticket size={20} />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900 text-sm">My Booked Trips</p>
+                  <p className="text-xs text-gray-400">View trips you booked as a passenger</p>
+                </div>
+              </div>
+              <ChevronRight size={18} className="text-gray-400" />
+            </Link>
+
             <button 
               onClick={() => setShowPrivacyModal(true)}
               className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition border-b border-gray-100 text-left"
             >
               <div className="flex items-center gap-3">
-                <div className="bg-green-50 text-green-600 p-2.5 rounded-xl">
+                <div className="bg-orange-50 text-orange-600 p-2.5 rounded-xl">
                   <Shield size={20} />
                 </div>
                 <div>
@@ -85,7 +99,7 @@ export default function ProfilePage() {
 
             <div className="p-4 flex items-center justify-between border-b border-gray-100">
               <div className="flex items-center gap-3">
-                <div className="bg-blue-50 text-[#185FA5] p-2.5 rounded-xl">
+                <div className="bg-gray-50 text-gray-600 p-2.5 rounded-xl">
                   <FileText size={20} />
                 </div>
                 <div>
@@ -97,7 +111,6 @@ export default function ProfilePage() {
 
           </div>
 
-          {/* SIGN OUT BUTTON */}
           <button 
             onClick={handleSignOut}
             className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-bold py-4 rounded-2xl transition flex justify-center items-center gap-2"
@@ -107,7 +120,6 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* PRIVACY POLICY POPUP MODAL */}
       {showPrivacyModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white max-w-lg w-full p-6 rounded-3xl shadow-xl space-y-4 max-h-[80vh] overflow-y-auto">
@@ -119,25 +131,15 @@ export default function ProfilePage() {
                 <X size={20} />
               </button>
             </div>
-
             <div className="text-sm text-gray-600 space-y-3 leading-relaxed">
-              <p>
-                Welcome to <strong>EasySafar</strong>. We respect your privacy and are committed to protecting your personal information.
-              </p>
+              <p>Welcome to <strong>EasySafar</strong>. We respect your privacy and are committed to protecting your personal information.</p>
               <h4 className="font-bold text-gray-800 pt-1">1. Location Data Collection</h4>
-              <p>
-                When drivers or captains turn on the live broadcast feature, EasySafar collects real-time GPS data to display vehicle positions to active passengers on the map. This data is only transmitted during active trips and is never stored permanently.
-              </p>
+              <p>When drivers or captains turn on the live broadcast feature, EasySafar collects real-time GPS data to display vehicle positions to active passengers on the map. This data is only transmitted during active trips and is never stored permanently.</p>
               <h4 className="font-bold text-gray-800 pt-1">2. Account Information</h4>
-              <p>
-                We only store your email address and selected user role (Passenger, Driver, or Adda Owner) for authentication and ticket management purposes. We do not sell or share your data with third parties.
-              </p>
+              <p>We only store your email address and selected user role (Passenger, Driver, or Adda Owner) for authentication and ticket management purposes. We do not sell or share your data with third parties.</p>
               <h4 className="font-bold text-gray-800 pt-1">3. Security</h4>
-              <p>
-                All user authentication is securely handled via industry-standard Firebase security protocols.
-              </p>
+              <p>All user authentication is securely handled via industry-standard Firebase security protocols.</p>
             </div>
-
             <button 
               onClick={() => setShowPrivacyModal(false)}
               className="w-full bg-[#185FA5] hover:bg-[#124b82] text-white font-bold py-3 rounded-xl transition mt-4"

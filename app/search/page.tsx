@@ -1,9 +1,9 @@
 "use client";
 import { Suspense, useState, useEffect } from "react";
 import { db, auth } from "@/lib/firebase";
-import { collection, getDocs, addDoc, doc, updateDoc, increment } from "firebase/firestore";
+import { collection, getDocs, addDoc, doc, updateDoc, increment, deleteDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import { Search as SearchIcon, Calendar, Clock, Users, Car, Bus, Building2, Truck, ArrowRightLeft, Sparkles, MapPin, X } from "lucide-react";
+import { Search as SearchIcon, Calendar, Clock, Users, Car, Bus, Building2, Truck, ArrowRightLeft, Sparkles, MapPin, X, Phone } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import LiveMap from "@/components/LiveMap"; 
 
@@ -26,6 +26,7 @@ interface Trip {
   luggage?: string;
   lat?: number;
   lng?: number;
+  createdAt?: any; 
 }
 
 function HighlightText({ text, query }: { text: string; query: string }) {
@@ -83,13 +84,20 @@ function SearchContent() {
       const querySnapshot = await getDocs(collection(db, "trips"));
       const allTrips: Trip[] = [];
       
-      const threeDaysAgo = new Date();
-      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-      const cutoffDate = threeDaysAgo.toISOString().split("T")[0];
+      // AUTO-DELETE LOGIC: Calculate the strict cutoff date (2 days ago)
+      const twoDaysAgo = new Date();
+      twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+      const cutoffDate = twoDaysAgo.toISOString().split("T")[0];
 
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        if (data.status === "active" && data.date >= cutoffDate) {
+        
+        // If the trip date is older than 2 days, auto-delete it from the database!
+        if (data.date < cutoffDate) {
+          deleteDoc(doc(db, "trips", docSnap.id)).catch((err) => console.error("Error auto-deleting old trip:", err));
+        } 
+        // Otherwise, if it's active, keep it and show it to the user
+        else if (data.status === "active") {
           allTrips.push({ id: docSnap.id, ...data } as Trip);
         }
       });
@@ -128,6 +136,13 @@ function SearchContent() {
     if (sortType === "price-asc") results.sort((a, b) => a.price - b.price);
     else if (sortType === "price-desc") results.sort((a, b) => b.price - a.price);
     else if (sortType === "date-asc") results.sort((a, b) => a.date.localeCompare(b.date));
+    else {
+      results.sort((a, b) => {
+        const timeA = a.createdAt?.seconds ? a.createdAt.seconds : (a.createdAt ? new Date(a.createdAt).getTime() / 1000 : 0);
+        const timeB = b.createdAt?.seconds ? b.createdAt.seconds : (b.createdAt ? new Date(b.createdAt).getTime() / 1000 : 0);
+        return timeB - timeA; 
+      });
+    }
 
     setFilteredTrips(results);
   };
@@ -215,6 +230,7 @@ function SearchContent() {
         seatsBooked: bookingType === "passenger" ? seatCount : 0,
         totalPrice: bookingType === "passenger" ? selectedTrip.price * seatCount : selectedTrip.price,
         type: bookingType,
+        contact: selectedTrip.driverPhone || selectedTrip.phone || "N/A",
         bookedAt: new Date(),
       });
 
@@ -233,13 +249,11 @@ function SearchContent() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 pb-24 space-y-6">
       
-      {/* Search Header */}
       <div className="flex items-center gap-3">
         <SearchIcon className="text-[#185FA5]" size={32} />
         <h1 className="text-3xl font-bold text-gray-900">Find Rides</h1>
       </div>
 
-      {/* AI Search Box */}
       <div className="bg-gradient-to-r from-blue-900 to-[#185FA5] p-6 rounded-3xl shadow-lg text-white">
         <div className="flex items-center gap-2 mb-4">
           <Sparkles className="text-yellow-400" size={20} />
@@ -259,7 +273,6 @@ function SearchContent() {
         </form>
       </div>
 
-      {/* Manual Search Section */}
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
         <form onSubmit={handleManualSearch} className="flex flex-col md:flex-row items-center gap-4">
           <div className="w-full">
@@ -306,41 +319,14 @@ function SearchContent() {
         </button>
       </div>
 
-      {/* Filter Buttons */}
       <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-hide">
-        <button 
-          onClick={() => handleFilterClick("all")}
-          className={`shrink-0 px-4 py-2 rounded-full text-sm font-bold transition border ${activeFilter === "all" ? "bg-[#185FA5] text-white border-[#185FA5]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
-        >
-          All Options
-        </button>
-        <button 
-          onClick={() => handleFilterClick("car")}
-          className={`shrink-0 px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition border ${activeFilter === "car" ? "bg-[#185FA5] text-white border-[#185FA5]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
-        >
-          <Car size={16} /> Private Cars
-        </button>
-        <button 
-          onClick={() => handleFilterClick("van")}
-          className={`shrink-0 px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition border ${activeFilter === "van" ? "bg-[#185FA5] text-white border-[#185FA5]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
-        >
-          <Bus size={16} /> Local Vans
-        </button>
-        <button 
-          onClick={() => handleFilterClick("full")}
-          className={`shrink-0 px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition border ${activeFilter === "full" ? "bg-[#185FA5] text-white border-[#185FA5]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
-        >
-          <Users size={16} /> Full Vehicle
-        </button>
-        <button 
-          onClick={() => handleFilterClick("cargo")}
-          className={`shrink-0 px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition border ${activeFilter === "cargo" ? "bg-[#185FA5] text-white border-[#185FA5]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
-        >
-          <Truck size={16} /> Cargo & Vans
-        </button>
+        <button onClick={() => handleFilterClick("all")} className={`shrink-0 px-4 py-2 rounded-full text-sm font-bold transition border ${activeFilter === "all" ? "bg-[#185FA5] text-white border-[#185FA5]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}>All Options</button>
+        <button onClick={() => handleFilterClick("car")} className={`shrink-0 px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition border ${activeFilter === "car" ? "bg-[#185FA5] text-white border-[#185FA5]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}><Car size={16} /> Private Cars</button>
+        <button onClick={() => handleFilterClick("van")} className={`shrink-0 px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition border ${activeFilter === "van" ? "bg-[#185FA5] text-white border-[#185FA5]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}><Bus size={16} /> Local Vans</button>
+        <button onClick={() => handleFilterClick("full")} className={`shrink-0 px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition border ${activeFilter === "full" ? "bg-[#185FA5] text-white border-[#185FA5]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}><Users size={16} /> Full Vehicle</button>
+        <button onClick={() => handleFilterClick("cargo")} className={`shrink-0 px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition border ${activeFilter === "cargo" ? "bg-[#185FA5] text-white border-[#185FA5]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}><Truck size={16} /> Cargo & Vans</button>
       </div>
 
-      {/* Results Count & Sort Dropdown */}
       <div className="flex justify-between items-center px-1">
         <span className="text-xs font-bold text-gray-500 uppercase">
           Showing {filteredTrips.length} Results
@@ -352,7 +338,7 @@ function SearchContent() {
             onChange={handleSortChange}
             className="text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white font-medium outline-none focus:border-[#185FA5]"
           >
-            <option value="default">Default</option>
+            <option value="default">Recently Posted</option>
             <option value="price-asc">Price (Low to High)</option>
             <option value="price-desc">Price (High to Low)</option>
             <option value="date-asc">Date (Earliest)</option>
@@ -360,7 +346,6 @@ function SearchContent() {
         </div>
       </div>
 
-      {/* Trip Results */}
       <div className="space-y-4">
         {filteredTrips.length === 0 ? (
           <div className="bg-white p-8 rounded-3xl border border-gray-200 text-center text-gray-500 text-sm">
@@ -371,6 +356,17 @@ function SearchContent() {
             <div key={trip.id} className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="space-y-2">
                 
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 ${
+                    trip.type === "adda" || trip.addaName 
+                      ? "bg-green-50 text-green-700 border border-green-200" 
+                      : "bg-blue-50 text-[#185FA5] border border-blue-200"
+                  }`}>
+                    {trip.type === "adda" || trip.addaName ? <Bus size={12} /> : <Car size={12} />}
+                    {trip.type === "adda" || trip.addaName ? "Adda Vehicle" : (trip.vehicleType || "Private Car")}
+                  </span>
+                </div>
+
                 <div className="text-lg font-bold text-gray-900 flex items-center gap-2">
                   <span><HighlightText text={trip.origin} query={originQuery} /></span>
                   <span className="text-gray-400">→</span>
@@ -381,9 +377,14 @@ function SearchContent() {
                   <span className="flex items-center gap-1"><Calendar size={14} /> {trip.date}</span>
                   <span className="flex items-center gap-1"><Clock size={14} /> {trip.time}</span>
                   <span className="flex items-center gap-1 text-[#185FA5] font-bold"><Users size={14} /> {trip.seatsAvailable} seats</span>
+                  
+                  {(trip.driverPhone || trip.phone) && (
+                    <span className="flex items-center gap-1 text-gray-800 font-bold bg-gray-100 px-2 py-0.5 rounded-md">
+                      <Phone size={14} className="text-green-600" /> {trip.driverPhone || trip.phone}
+                    </span>
+                  )}
                 </div>
 
-                {/* View Custom Map Button */}
                 {trip.lat && trip.lng && (
                   <button 
                     onClick={() => setMapTrip(trip)}
@@ -411,7 +412,6 @@ function SearchContent() {
         )}
       </div>
 
-      {/* BOOKING MODAL */}
       {selectedTrip && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[70]">
           <div className="bg-white max-w-md w-full p-6 rounded-3xl shadow-xl space-y-6">
@@ -422,10 +422,27 @@ function SearchContent() {
               </button>
             </div>
             
-            <div className="bg-gray-50 p-4 rounded-2xl space-y-2 text-sm">
-              <p className="font-bold text-gray-800">{selectedTrip.origin} to {selectedTrip.destination}</p>
-              <p className="text-gray-500">Date: {selectedTrip.date} at {selectedTrip.time}</p>
-              <p className="text-gray-500">Price: Rs {selectedTrip.price} per seat</p>
+            <div className="bg-gray-50 p-4 rounded-2xl space-y-3 text-sm">
+              <div>
+                <p className="font-bold text-gray-800">{selectedTrip.origin} to {selectedTrip.destination}</p>
+                <p className="text-gray-500">Date: {selectedTrip.date} at {selectedTrip.time}</p>
+                <p className="text-gray-500">Price: Rs {selectedTrip.price} per seat</p>
+              </div>
+
+              <div className="flex items-center gap-3 pt-3 border-t border-gray-200">
+                <div className="flex-1 bg-white p-2 rounded-xl border border-gray-100 text-center shadow-sm">
+                  <span className="block text-[10px] font-bold text-gray-400 uppercase">Booked Seats</span>
+                  <span className="block text-xl font-black text-red-500">
+                    {selectedTrip.totalSeats ? (selectedTrip.totalSeats - selectedTrip.seatsAvailable) : 0}
+                  </span>
+                </div>
+                <div className="flex-1 bg-white p-2 rounded-xl border border-gray-100 text-center shadow-sm">
+                  <span className="block text-[10px] font-bold text-gray-400 uppercase">Remaining Seats</span>
+                  <span className="block text-xl font-black text-green-600">
+                    {selectedTrip.seatsAvailable}
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -475,7 +492,6 @@ function SearchContent() {
         </div>
       )}
 
-      {/* CUSTOM MAP MODAL */}
       {mapTrip && mapTrip.lat && mapTrip.lng && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
           <div className="bg-white max-w-2xl w-full rounded-3xl shadow-xl overflow-hidden flex flex-col">
@@ -487,12 +503,12 @@ function SearchContent() {
                 <X size={16} />
               </button>
             </div>
-           <div className="w-full h-80 sm:h-96 bg-gray-100">
-             <LiveMap 
-  origin={mapTrip.origin} 
-  destination={mapTrip.destination} 
-  driverLocation={{ lat: mapTrip.lat as number, lng: mapTrip.lng as number }} 
-/>
+            <div className="w-full h-80 sm:h-96 bg-gray-100">
+              <LiveMap 
+                origin={mapTrip.origin} 
+                destination={mapTrip.destination} 
+                driverLocation={{ lat: mapTrip.lat as number, lng: mapTrip.lng as number }} 
+              />
             </div>
             <div className="p-4 bg-gray-50 text-xs text-gray-500 text-center font-medium">
               Location fetched for route: {mapTrip.origin} to {mapTrip.destination}

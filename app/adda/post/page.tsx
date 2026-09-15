@@ -13,7 +13,7 @@ export default function AddaPostPage() {
   const [formData, setFormData] = useState({
     addaName: "",
     phone: "", 
-    vehicleIdentifier: "Van #1", // NEW: Track specific vehicle/dispatch number
+    vehicleIdentifier: "Van #1", 
     vehicleType: "Hiace Van",
     origin: "",
     destination: "",
@@ -22,6 +22,21 @@ export default function AddaPostPage() {
     seatsAvailable: "14",
     price: "",
   });
+
+  // Safely calculate local Date Limits (Today to 3 days from now)
+  const getLocalDateString = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const today = new Date();
+  const minDate = getLocalDateString(today);
+  
+  const max = new Date();
+  max.setDate(max.getDate() + 3);
+  const maxDate = getLocalDateString(max);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -35,11 +50,32 @@ export default function AddaPostPage() {
     e.preventDefault();
     if (!userEmail) return alert("Please log in first!");
 
+    // 1. EXACT 11-DIGIT PHONE VALIDATION
+    const cleanPhone = formData.phone.trim();
+    if (cleanPhone.length !== 11 || !/^\d+$/.test(cleanPhone)) {
+      alert("Error: Phone number must be exactly 11 digits (e.g., 03001234567).");
+      return; 
+    }
+
+    // 2. BULLETPROOF PAST TIME VALIDATION
+    const now = new Date();
+    const localHours = String(now.getHours()).padStart(2, '0');
+    const localMinutes = String(now.getMinutes()).padStart(2, '0');
+    const currentTimeString = `${localHours}:${localMinutes}`;
+
+    // If the selected date is today, the time MUST be greater than current time
+    if (formData.date === minDate && formData.time <= currentTimeString) {
+      alert("Error: You cannot schedule a trip in the past. Please select a future time for today.");
+      return;
+    }
+
     try {
       await addDoc(collection(db, "trips"), {
         ...formData,
+        phone: cleanPhone,
         driverEmail: userEmail,
         seatsAvailable: parseInt(formData.seatsAvailable),
+        totalSeats: parseInt(formData.seatsAvailable),
         price: parseInt(formData.price),
         status: "active",
         type: "adda", 
@@ -48,13 +84,12 @@ export default function AddaPostPage() {
       
       alert("Vehicle Posted Successfully! You can now post the next vehicle.");
       
-      // Clear vehicle identifier or increment it slightly to make posting multiple cars faster
       setFormData(prev => ({
         ...prev,
         vehicleIdentifier: "Van #" + (parseInt(prev.vehicleIdentifier.replace(/\D/g, "")) + 1 || 2)
       }));
       
-      router.push("/adda/posts"); // Send them straight to their posts to see their fleet building up
+      router.push("/adda"); 
     } catch (error) {
       console.error("Error posting adda trip:", error);
       alert("Failed to post vehicle.");
@@ -82,7 +117,7 @@ export default function AddaPostPage() {
           </div>
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><Phone size={16}/> Terminal Phone Number</label>
-            <input type="tel" required placeholder="0300-1234567" value={formData.phone} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3" onChange={(e) => setFormData({...formData, phone: e.target.value})} />
+            <input type="tel" required placeholder="03001234567" value={formData.phone} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3" onChange={(e) => setFormData({...formData, phone: e.target.value})} />
           </div>
         </div>
 
@@ -115,7 +150,7 @@ export default function AddaPostPage() {
         <div className="grid grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><Calendar size={16}/> Date</label>
-            <input type="date" required value={formData.date} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3" onChange={(e) => setFormData({...formData, date: e.target.value})} />
+            <input type="date" required min={minDate} max={maxDate} value={formData.date} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3" onChange={(e) => setFormData({...formData, date: e.target.value})} />
           </div>
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><Clock size={16}/> Departure Time</label>

@@ -16,13 +16,28 @@ export default function PostTripPage() {
   const [driverPhone, setDriverPhone] = useState(""); 
   const [acceptPassengers, setAcceptPassengers] = useState(true);
   const [seats, setSeats] = useState("");
-  const [price, setPrice] = useState(""); // NEW: Price state
+  const [price, setPrice] = useState("");
   const [acceptCargo, setAcceptCargo] = useState(false);
   const [cargoWeight, setCargoWeight] = useState("");
 
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+
+  // Safely calculate local Date Limits (Today to 3 days from now)
+  const getLocalDateString = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const today = new Date();
+  const minDate = getLocalDateString(today);
+  
+  const max = new Date();
+  max.setDate(max.getDate() + 3);
+  const maxDate = getLocalDateString(max);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -39,21 +54,46 @@ export default function PostTripPage() {
     e.preventDefault();
     setIsSubmitting(true);
 
+    // 1. EXACT 11-DIGIT PHONE VALIDATION
+    const cleanPhone = driverPhone.trim();
+    if (cleanPhone.length !== 11 || !/^\d+$/.test(cleanPhone)) {
+      alert("Error: Phone number must be exactly 11 digits (e.g., 03001234567).");
+      setIsSubmitting(false);
+      return; 
+    }
+
+    // 2. BULLETPROOF PAST TIME VALIDATION
+    const now = new Date();
+    const localHours = String(now.getHours()).padStart(2, '0');
+    const localMinutes = String(now.getMinutes()).padStart(2, '0');
+    const currentTimeString = `${localHours}:${localMinutes}`;
+
+    // If the selected date is today, the time MUST be greater than current time
+    if (date === minDate && time <= currentTimeString) {
+      alert("Error: You cannot schedule a trip in the past. Please select a future time for today.");
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       const tripsCollection = collection(db, "trips");
 
       await addDoc(tripsCollection, {
         driverEmail: userEmail,
-        driverPhone: driverPhone,
+        driverPhone: cleanPhone,
         origin: origin,
         destination: destination,
         date: date,
         time: time,
         acceptPassengers: acceptPassengers,
         seatsAvailable: acceptPassengers ? Number(seats) : 0,
-        pricePerSeat: price ? Number(price) : 0, // NEW: Save price to DB
+        totalSeats: acceptPassengers ? Number(seats) : 0, 
+        pricePerSeat: price ? Number(price) : 0,
+        price: price ? Number(price) : 0, 
         acceptCargo: acceptCargo,
         cargoCapacityKg: acceptCargo ? Number(cargoWeight) : 0,
+        type: "car", 
+        vehicleType: "Private Car", 
         status: "active",
         createdAt: serverTimestamp(),
       });
@@ -107,7 +147,7 @@ export default function PostTripPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="flex items-center border border-gray-300 rounded-lg px-3 py-3 bg-gray-50 focus-within:border-[#185FA5] transition-colors">
                 <Calendar className="text-gray-400 mr-2" size={20} />
-                <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className="w-full outline-none bg-transparent text-gray-600" />
+                <input type="date" required min={minDate} max={maxDate} value={date} onChange={(e) => setDate(e.target.value)} className="w-full outline-none bg-transparent text-gray-600" />
               </div>
               <div className="flex items-center border border-gray-300 rounded-lg px-3 py-3 bg-gray-50 focus-within:border-[#185FA5] transition-colors">
                 <Clock className="text-gray-400 mr-2" size={20} />
@@ -117,7 +157,6 @@ export default function PostTripPage() {
           </div>
         </div>
 
-        {/* NEW: PRICE SECTION */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Pricing (Optional)</h2>
           <div className="flex items-center border border-gray-300 rounded-lg px-3 py-3 bg-gray-50 focus-within:border-[#185FA5] transition-colors">
