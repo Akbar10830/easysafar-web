@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useState, useEffect } from "react";
 import { db, auth } from "@/lib/firebase";
-import { collection, getDocs, addDoc, doc, updateDoc, increment, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, addDoc, doc, updateDoc, increment, deleteDoc, runTransaction } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { Search as SearchIcon, Calendar, Clock, Users, Car, Bus, Building2, Truck, ArrowRightLeft, Sparkles, MapPin, X, Phone } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -214,35 +214,51 @@ function SearchContent() {
     }
 
     const seatCount = typeof seatsToBook === "number" ? seatsToBook : 1;
-    if (bookingType === "passenger" && seatCount > selectedTrip.seatsAvailable) {
-      alert("Not enough seats available!");
-      return;
-    }
 
     try {
-      await addDoc(collection(db, "bookings"), {
-        tripId: selectedTrip.id,
-        passengerEmail: userEmail,
-        origin: selectedTrip.origin,
-        destination: selectedTrip.destination,
-        date: selectedTrip.date,
-        time: selectedTrip.time,
-        seatsBooked: bookingType === "passenger" ? seatCount : 0,
-        totalPrice: bookingType === "passenger" ? selectedTrip.price * seatCount : selectedTrip.price,
-        type: bookingType,
-        contact: selectedTrip.driverPhone || selectedTrip.phone || "N/A",
-        bookedAt: new Date(),
-      });
+      // SECURE TRANSACTION: Prevents concurrent double-booking race conditions
+      await runTransaction(db, async (transaction) => {
+        const tripRef = doc(db, "trips", selectedTrip.id);
+        const tripDoc = await transaction.get(tripRef);
 
-      if (bookingType === "passenger") {
-        await updateDoc(doc(db, "trips", selectedTrip.id), { seatsAvailable: increment(-seatCount) });
-      }
+        if (!tripDoc.exists()) {
+          throw new Error("Trip does not exist.");
+        }
+
+        const currentSeatsAvailable = tripDoc.data().seatsAvailable;
+
+        if (bookingType === "passenger" && seatCount > currentSeatsAvailable) {
+          throw new Error("Not enough seats available!");
+        }
+
+        // Perform atomic seat update if passenger booking
+        if (bookingType === "passenger") {
+          transaction.update(tripRef, { seatsAvailable: currentSeatsAvailable - seatCount });
+        }
+
+        // Create the booking record securely
+        const newBookingRef = doc(collection(db, "bookings"));
+        transaction.set(newBookingRef, {
+          tripId: selectedTrip.id,
+          passengerEmail: userEmail,
+          origin: selectedTrip.origin,
+          destination: selectedTrip.destination,
+          date: selectedTrip.date,
+          time: selectedTrip.time,
+          seatsBooked: bookingType === "passenger" ? seatCount : 0,
+          totalPrice: bookingType === "passenger" ? selectedTrip.price * seatCount : selectedTrip.price,
+          type: bookingType,
+          contact: selectedTrip.driverPhone || selectedTrip.phone || "N/A",
+          bookedAt: new Date(),
+        });
+      });
 
       alert("Booking Confirmed Successfully!");
       setSelectedTrip(null);
       router.push("/history");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Booking error:", error);
+      alert(error.message || "Failed to complete booking.");
     }
   };
 
